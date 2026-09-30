@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh; 
+            margin: 0; 
+            background: linear-gradient(135deg, #6e8efb, #a777e3);
+        }
+        .login-container { 
+            background: white; 
+            padding: 2.5rem; 
+            border-radius: 12px; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2); 
+            width: 100%; 
+            max-width: 400px; 
+        }
+        h2 { 
+            text-align: center; 
+            color: #333; 
+            margin-bottom: 2rem; 
+            font-weight: 600;
+        }
+        .form-group { 
+            margin-bottom: 1.2rem; 
+        }
+        label { 
+            display: block; 
+            margin-bottom: .5rem; 
+            color: #555; 
+            font-size: 0.9rem;
+        }
+        input[type="text"], input[type="password"] { 
+            width: 100%; 
+            padding: 12px; 
+            border: 1px solid #ccc; 
+            border-radius: 6px; 
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+        input[type="text"]:focus, input[type="password"]:focus {
+            border-color: #6e8efb;
+            outline: none;
+        }
+        button { 
+            width: 100%; 
+            padding: 12px; 
+            background: linear-gradient(135deg, #6e8efb, #a777e3);
+            color: white; 
+            border: none; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            font-size: 1rem; 
+            font-weight: 600;
+            margin-top: 10px; 
+            transition: opacity 0.3s;
+        }
+        button:hover { 
+            opacity: 0.9;
+        }
+        .error-message { 
+            color: #d9534f; 
+            background-color: #f9f2f2;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 1.5rem; 
+            font-size: 0.9rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h2>Selamat Datang</h2>
+        
+        {% if form.errors %}
+            <div class="error-message">Username atau password Anda salah.</div>
+        {% endif %}
+
+        <form method="post" action="{% url 'login' %}">
+            {% csrf_token %}
+            <div class="form-group">
+                <label for="id_username">Username</label>
+                <input type="text" name="username" id="id_username" required autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label for="id_password">Password</label>
+                <input type="password" name="password" id="id_password" required autocomplete="current-password">
+            </div>
+            <button type="submit">Login</button>
+        </form>
+    </div>
+</body>
+</html>
