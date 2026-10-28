@@ -2,60 +2,149 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Beranda</title>
-    <style>
-        body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            background-color: #f4f7f6;
-            margin: 0;
-            padding: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-        }
-        .container { 
-            background: white; 
-            padding: 3rem 4rem; 
-            border-radius: 12px; 
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1); 
-            text-align: center;
-        }
-        h1 { 
-            color: #2c3e50; 
-            margin-bottom: 10px;
-        }
-        p {
-            color: #7f8c8d;
-            font-size: 1.1rem;
-            margin-bottom: 30px;
-        }
-        .btn-logout { 
-            display: inline-block; 
-            padding: 12px 25px; 
-            background: #e74c3c; 
-            color: white; 
-            border: none; 
-            border-radius: 6px; 
-            font-size: 1rem;
-            font-weight: bold;
-            cursor: pointer; 
-            transition: background 0.3s;
-        }
-        .btn-logout:hover { 
-            background: #c0392b; 
-        }
-    </style>
+    <title>Presensi Asrama Unand</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
-<body>
-    <div class="container">
-        <h1>Selamat Datang, {{ user.username }}!</h1>
-        <p>Anda berhasil login ke dalam sistem.</p>
-        <form action="{% url 'logout' %}" method="post">
-            {% csrf_token %}
-            <button type="submit" class="btn-logout">Logout</button>
-        </form>
+<body class="bg-light">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="#">Presensi Asrama Unand</a>
+            <div class="d-flex align-items-center text-white">
+                <span class="me-3">{{ user.username }} ({{ user.get_role_display }})</span>
+                <a href="{% url 'logout' %}" class="btn btn-outline-light btn-sm">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container my-4">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        <div class="row">
+            <div class="col-md-4 mb-4">
+                <div class="card shadow-sm mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title">Informasi Penghuni</h5>
+                        {% if penghuni_kamar %}
+                            <p class="mb-1"><strong>Gedung:</strong> {{ penghuni_kamar.kamar.gedung.nama_gedung }}</p>
+                            <p class="mb-0"><strong>Kamar:</strong> {{ penghuni_kamar.kamar.nomor_kamar }}</p>
+                        {% else %}
+                            <p class="text-danger mb-0">Belum dialokasikan ke kamar.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title">Presensi Sekarang</h5>
+                        {% if sesi_aktif %}
+                            <p class="text-muted mb-2">Sesi: <strong>{{ sesi_aktif.get_nama_sesi_display }}</strong> ({{ sesi_aktif.jam_mulai|time:"H:i" }} - {{ sesi_aktif.jam_selesai|time:"H:i" }})</p>
+                            
+                            {% if presensi_sesi_ini %}
+                                <div class="alert alert-info">Status: <strong>{{ presensi_sesi_ini.get_status_display }}</strong></div>
+                            {% else %}
+                                <form action="{% url 'do_presensi' %}" method="POST" id="formPresensi">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="latitude" id="lat">
+                                    <input type="hidden" name="longitude" id="lng">
+                                    <button type="button" onclick="getLocation()" class="btn btn-success w-100 mb-2">Presensi GPS</button>
+                                </form>
+
+                                <button class="btn btn-outline-warning w-100 btn-sm" data-bs-toggle="modal" data-bs-target="#modalIzin">Ajukan Izin / Sakit</button>
+                            {% endif %}
+                        {% else %}
+                            <div class="alert alert-secondary mb-0">Tidak ada sesi presensi aktif saat ini. (Subuh 04.00-06.00 / Malam 18.00-20.30)</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-8">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-white"><h5 class="mb-0">Riwayat Presensi</h5></div>
+                    <div class="card-body p-0">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Tanggal</th>
+                                    <th>Sesi</th>
+                                    <th>Waktu</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for r in riwayat_presensi %}
+                                <tr>
+                                    <td>{{ r.tanggal }}</td>
+                                    <td>{{ r.sesi.get_nama_sesi_display }}</td>
+                                    <td>{{ r.waktu_presensi|time:"H:i"|default:"-" }}</td>
+                                    <td>
+                                        <span class="badge bg-{% if r.status == 'hadir' %}success{% elif r.status == 'izin' %}warning{% else %}danger{% endif %}">
+                                            {{ r.get_status_display }}
+                                        </span>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="4" class="text-center py-3 text-muted">Belum ada riwayat presensi.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
+
+    <!-- Modal Izin -->
+    {% if sesi_aktif %}
+    <div class="modal fade" id="modalIzin" tabindex="-1">
+        <div class="modal-dialog">
+            <form action="{% url 'ajukan_izin' %}" method="POST" enctype="multipart/form-data" class="modal-content">
+                {% csrf_token %}
+                <input type="hidden" name="sesi_id" value="{{ sesi_aktif.id }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">Form Pengajuan Izin</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Alasan</label>
+                        <textarea name="alasan" class="form-control" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Upload Bukti (JPG/PDF)</label>
+                        <input type="file" name="file_bukti" accept=".jpg,.jpeg,.png,.pdf" class="form-control" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-warning">Kirim Izin</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function getLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(function(pos) {
+                    document.getElementById('lat').value = pos.coords.latitude;
+                    document.getElementById('lng').value = pos.coords.longitude;
+                    document.getElementById('formPresensi').submit();
+                }, function(err) {
+                    alert("Gagal mengambil lokasi GPS. Pastikan izin lokasi aktif.");
+                });
+            } else {
+                alert("Browser tidak mendukung geolokasi.");
+            }
+        }
+    </script>
 </body>
 </html>

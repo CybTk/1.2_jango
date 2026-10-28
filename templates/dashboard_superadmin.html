@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard Superadmin - Asrama Unand</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-danger">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="#">Panel Superadmin Asrama</a>
+            <div class="d-flex align-items-center text-white">
+                <span class="me-3">{{ user.username }} (Superadmin)</span>
+                <a href="/admin/" target="_blank" class="btn btn-light btn-sm me-2 fw-semibold">Buka Kelola Data (/admin/)</a>
+                <a href="{% url 'logout' %}" class="btn btn-outline-light btn-sm">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container my-4">
+        <h4 class="mb-4">Ringkasan Master Data Asrama</h4>
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <div class="card bg-primary text-white shadow-sm">
+                    <div class="card-body">
+                        <h6>Total Penghuni</h6>
+                        <h2 class="mb-0">{{ total_penghuni }}</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-success text-white shadow-sm">
+                    <div class="card-body">
+                        <h6>Total Fasilitator</h6>
+                        <h2 class="mb-0">{{ total_fasil }}</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-dark shadow-sm">
+                    <div class="card-body">
+                        <h6>Total Gedung</h6>
+                        <h2 class="mb-0">{{ total_gedung }}</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-info text-white shadow-sm">
+                    <div class="card-body">
+                        <h6>Total Kamar</h6>
+                        <h2 class="mb-0">{{ total_kamar }}</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-header bg-white"><h5 class="mb-0">Akses Cepat Pengelolaan Master Data</h5></div>
+            <div class="card-body">
+                <p class="text-muted">Gunakan tombol di bawah untuk langsung menuju menu pengelolaan data di Django Admin:</p>
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="/admin/accounts/user/add/" target="_blank" class="btn btn-outline-primary">+ Tambah Akun User</a>
+                    <a href="/admin/accounts/gedung/add/" target="_blank" class="btn btn-outline-warning">+ Tambah Gedung</a>
+                    <a href="/admin/accounts/kamar/add/" target="_blank" class="btn btn-outline-info">+ Tambah Kamar</a>
+                    <a href="/admin/accounts/penghunikamar/add/" target="_blank" class="btn btn-outline-success">+ Penempatan Kamar</a>
+                    <a href="/admin/accounts/sesipresensi/add/" target="_blank" class="btn btn-outline-secondary">+ Tambah Sesi Presensi</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
