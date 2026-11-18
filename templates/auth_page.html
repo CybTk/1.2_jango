@@ -1,0 +1,26 @@
+{% load static %}<!DOCTYPE html>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ judul }} · Presensi Asrama UNAND</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'css/app.css' %}"></head>
+<body>{% include "_icons.html" %}
+<div class="auth-panel" style="min-height:100vh;background:linear-gradient(160deg,var(--navy-900),var(--navy-800))">
+  <div class="auth-box card card-body" style="padding:32px">
+    <div class="brand" style="padding:0 0 18px;border:0">
+      <div class="brand-mark"><svg class="icon"><use href="#i-building"/></svg></div>
+      <div><b style="color:var(--text)">Presensi Asrama</b><small>Universitas Andalas</small></div>
+    </div>
+    <h2>{{ judul }}</h2><p>{{ keterangan }}</p>
+    {% if validlink == False %}
+      <div class="alert alert-error">Tautan tidak valid atau sudah kedaluwarsa.</div>
+      <a class="btn btn-primary" href="{% url 'password_reset' %}">Minta tautan baru</a>
+    {% elif form %}
+      <form method="post" novalidate>{% csrf_token %}{% include "_form_fields.html" %}
+        <button class="btn btn-primary" type="submit">{{ tombol|default:"Kirim" }}</button></form>
+      <p style="margin:18px 0 0;text-align:center"><a href="{% url 'login' %}">Kembali ke halaman masuk</a></p>
+    {% else %}
+      <a class="btn btn-primary" href="{% url 'login' %}">Ke halaman masuk</a>
+    {% endif %}
+  </div>
+</div></body></html>

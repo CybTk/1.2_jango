@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Gedung &amp; Kamar{% endblock %}
+{% block heading %}Gedung &amp; Kamar{% endblock %}
+{% block subheading %}Kapasitas dan okupansi seluruh asrama{% endblock %}
+{% block content %}
+<div class="stack">
+  <section class="grid g-2" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr))">
+    {% for o in okupansi %}
+    <div class="card card-body">
+      <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:12px">
+        <div><b style="font-size:16px">{{ o.gedung.nama_gedung }}</b><small style="display:block">{{ o.jumlah_kamar }} kamar · radius {{ o.gedung.radius_meter }} m</small></div>
+        <a class="btn btn-sm" href="{% url 'gedung_ubah' o.gedung.id %}">Ubah</a>
+      </div>
+      <div class="occ"><div class="top"><small>Terisi</small><b>{{ o.terisi }} / {{ o.kapasitas }}</b></div>
+        <div class="progress {% if o.persen >= 100 %}full{% elif o.persen >= 85 %}warn{% endif %}"><i style="width:{{ o.persen }}%"></i></div></div>
+    </div>
+    {% empty %}<div class="card empty" style="grid-column:1/-1"><b>Belum ada gedung</b>Tambahkan gedung pertama Anda.</div>{% endfor %}
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Daftar Kamar</h2>
+      <div class="row-actions">
+        <a class="btn btn-sm" href="{% url 'gedung_tambah' %}"><svg class="icon"><use href="#i-plus"/></svg>Gedung</a>
+        <a class="btn btn-primary btn-sm" href="{% url 'kamar_tambah' %}"><svg class="icon"><use href="#i-plus"/></svg>Kamar</a></div></div>
+    {% if kamar_list %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Gedung</th><th>Kamar</th><th>Kapasitas</th><th>Terisi</th><th>Status</th><th></th></tr></thead>
+      <tbody>{% for k in kamar_list %}
+        <tr><td>{{ k.gedung.nama_gedung }}</td><td><b>{{ k.nomor_kamar }}</b></td><td>{{ k.kapasitas }}</td><td>{{ k.terisi }}</td>
+          <td>{% if k.terisi >= k.kapasitas %}<span class="badge b-alpa">Penuh</span>{% elif k.terisi == 0 %}<span class="badge b-none">Kosong</span>{% else %}<span class="badge b-hadir">Tersedia</span>{% endif %}</td>
+          <td><a class="btn btn-sm" href="{% url 'kamar_ubah' k.id %}">Ubah</a></td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+    {% else %}<div class="empty"><b>Belum ada kamar</b></div>{% endif %}
+  </section>
+</div>
+{% endblock %}

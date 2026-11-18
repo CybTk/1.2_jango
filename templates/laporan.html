@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Laporan Presensi{% endblock %}
+{% block heading %}Laporan Presensi{% endblock %}
+{% block subheading %}Rekap bulanan {{ periode|date:"F Y" }}{% endblock %}
+{% block content %}
+<div class="stack">
+  <section class="card no-print">
+    <form class="filters" method="get">
+      <div class="field"><label>Bulan</label><input class="input" type="month" name="bulan" value="{{ bulan }}"></div>
+      <div class="field"><label>Gedung</label><select class="input" name="gedung"><option value="">Semua gedung</option>
+        {% for g in gedung_list %}<option value="{{ g.id }}" {% if gedung_sel == g.id|stringformat:"s" %}selected{% endif %}>{{ g.nama_gedung }}</option>{% endfor %}</select></div>
+      <div class="field" style="flex:0"><button class="btn btn-primary">Tampilkan</button></div>
+      <div class="field" style="flex:0"><a class="btn" href="{% url 'laporan_csv' %}?{{ querystring }}">Unduh Excel (CSV)</a></div>
+      <div class="field" style="flex:0"><button class="btn" type="button" onclick="window.print()">Cetak / PDF</button></div>
+    </form>
+  </section>
+  <div class="grid g-5">
+    <div class="card stat s-hadir"><span>Hadir</span><strong>{{ rekap.hadir }}</strong></div>
+    <div class="card stat s-terlambat"><span>Terlambat</span><strong>{{ rekap.terlambat }}</strong></div>
+    <div class="card stat s-izin"><span>Izin</span><strong>{{ rekap.izin }}</strong></div>
+    <div class="card stat s-sakit"><span>Sakit</span><strong>{{ rekap.sakit }}</strong></div>
+    <div class="card stat s-alpa"><span>Alpa</span><strong>{{ rekap.alpa }}</strong></div>
+  </div>
+  <section class="card">
+    <div class="card-head"><h2>Tren Kehadiran Harian</h2><small>% hadir + terlambat dari seluruh presensi tercatat</small></div>
+    <div class="card-body">
+      {% if tren %}<div class="bars">{% for t in tren %}
+        <div class="bar" title="{{ t.tanggal|date:'d M' }}: {{ t.persen }}% ({{ t.ok }}/{{ t.total }})"><i style="height:{{ t.persen }}%"></i><span>{{ t.tanggal|date:"j" }}</span></div>
+      {% endfor %}</div>{% else %}<div class="empty"><b>Belum ada data</b>pada periode ini.</div>{% endif %}
+    </div>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Rekap per Penghuni</h2><small>{{ daftar|length }} penghuni</small></div>
+    {% if daftar %}<div class="table-wrap"><table>
+      <thead><tr><th>Penghuni</th><th>Hadir</th><th>Terlambat</th><th>Izin</th><th>Sakit</th><th>Alpa</th><th>Total</th><th>% Hadir</th></tr></thead>
+      <tbody>{% for b in daftar %}<tr>
+        <td class="who"><a href="{% url 'penghuni_detail' b.id %}"><b>{{ b.nama }}</b></a><small>{{ b.nim|default:"–" }}</small></td>
+        <td>{{ b.hadir }}</td><td>{{ b.terlambat }}</td><td>{{ b.izin }}</td><td>{{ b.sakit }}</td><td>{{ b.alpa }}</td><td>{{ b.total }}</td>
+        <td><div class="progress" style="width:90px;display:inline-block;vertical-align:middle"><i style="width:{{ b.persen }}%"></i></div> {{ b.persen }}%</td></tr>{% endfor %}</tbody>
+    </table></div>{% else %}<div class="empty"><b>Tidak ada data</b>Ubah bulan atau gedung.</div>{% endif %}
+  </section>
+</div>
+{% endblock %}

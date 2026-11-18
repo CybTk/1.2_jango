@@ -1,150 +1,78 @@
-<!DOCTYPE html>
-<html lang="id">
-<head>
-    <meta charset="UTF-8">
-    <title>Presensi Asrama Unand</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
-<body class="bg-light">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-        <div class="container">
-            <a class="navbar-brand fw-bold" href="#">Presensi Asrama Unand</a>
-            <div class="d-flex align-items-center text-white">
-                <span class="me-3">{{ user.username }} ({{ user.get_role_display }})</span>
-                <a href="{% url 'logout' %}" class="btn btn-outline-light btn-sm">Logout</a>
-            </div>
-        </div>
-    </nav>
-
-    <div class="container my-4">
-        {% if messages %}
-            {% for message in messages %}
-                <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-            {% endfor %}
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block heading %}Halo, {{ user.first_name|default:user.username }}{% endblock %}
+{% block subheading %}{{ today|date:"l, d F Y" }}{% endblock %}
+{% block content %}
+<div class="stack">
+  <section class="hero">
+    <div>
+      <p class="eyebrow">Penempatan Asrama</p>
+      {% if penghuni_kamar %}
+        <h2>{{ penghuni_kamar.kamar.gedung.nama_gedung }} · Kamar {{ penghuni_kamar.kamar.nomor_kamar }}</h2>
+        <p>Menghuni sejak {{ penghuni_kamar.tanggal_masuk|date:"d F Y" }}</p>
+      {% else %}
+        <h2>Belum ada penempatan kamar</h2><p>Hubungi fasilitator asrama untuk didaftarkan ke kamar.</p>
+      {% endif %}
+    </div>
+    <div class="hero-action">
+      {% if sesi_aktif %}
+        {% if presensi_sesi_ini %}
+          <div class="done"><svg class="icon"><use href="#i-check"/></svg>Presensi {{ sesi_aktif.get_nama_sesi_display }}: {{ presensi_sesi_ini.get_status_display }}</div>
+          {% if presensi_sesi_ini.waktu_presensi %}<small>Tercatat pukul {{ presensi_sesi_ini.waktu_presensi|time:"H:i" }}</small>{% endif %}
+        {% else %}
+          <form id="formPresensi" method="post" action="{% url 'do_presensi' %}">{% csrf_token %}
+            <input type="hidden" name="latitude"><input type="hidden" name="longitude">
+            <button class="btn btn-accent btn-lg"><svg class="icon"><use href="#i-pin"/></svg>Presensi {{ sesi_aktif.get_nama_sesi_display }}</button>
+          </form>
+          <small id="geoStatus">Aktifkan GPS dan pastikan Anda berada di area asrama.</small>
         {% endif %}
-
-        <div class="row">
-            <div class="col-md-4 mb-4">
-                <div class="card shadow-sm mb-3">
-                    <div class="card-body">
-                        <h5 class="card-title">Informasi Penghuni</h5>
-                        {% if penghuni_kamar %}
-                            <p class="mb-1"><strong>Gedung:</strong> {{ penghuni_kamar.kamar.gedung.nama_gedung }}</p>
-                            <p class="mb-0"><strong>Kamar:</strong> {{ penghuni_kamar.kamar.nomor_kamar }}</p>
-                        {% else %}
-                            <p class="text-danger mb-0">Belum dialokasikan ke kamar.</p>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <div class="card shadow-sm">
-                    <div class="card-body">
-                        <h5 class="card-title">Presensi Sekarang</h5>
-                        {% if sesi_aktif %}
-                            <p class="text-muted mb-2">Sesi: <strong>{{ sesi_aktif.get_nama_sesi_display }}</strong> ({{ sesi_aktif.jam_mulai|time:"H:i" }} - {{ sesi_aktif.jam_selesai|time:"H:i" }})</p>
-                            
-                            {% if presensi_sesi_ini %}
-                                <div class="alert alert-info">Status: <strong>{{ presensi_sesi_ini.get_status_display }}</strong></div>
-                            {% else %}
-                                <form action="{% url 'do_presensi' %}" method="POST" id="formPresensi">
-                                    {% csrf_token %}
-                                    <input type="hidden" name="latitude" id="lat">
-                                    <input type="hidden" name="longitude" id="lng">
-                                    <button type="button" onclick="getLocation()" class="btn btn-success w-100 mb-2">Presensi GPS</button>
-                                </form>
-
-                                <button class="btn btn-outline-warning w-100 btn-sm" data-bs-toggle="modal" data-bs-target="#modalIzin">Ajukan Izin / Sakit</button>
-                            {% endif %}
-                        {% else %}
-                            <div class="alert alert-secondary mb-0">Tidak ada sesi presensi aktif saat ini. (Subuh 04.00-06.00 / Malam 18.00-20.30)</div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-md-8">
-                <div class="card shadow-sm">
-                    <div class="card-header bg-white"><h5 class="mb-0">Riwayat Presensi</h5></div>
-                    <div class="card-body p-0">
-                        <table class="table table-hover mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Tanggal</th>
-                                    <th>Sesi</th>
-                                    <th>Waktu</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for r in riwayat_presensi %}
-                                <tr>
-                                    <td>{{ r.tanggal }}</td>
-                                    <td>{{ r.sesi.get_nama_sesi_display }}</td>
-                                    <td>{{ r.waktu_presensi|time:"H:i"|default:"-" }}</td>
-                                    <td>
-                                        <span class="badge bg-{% if r.status == 'hadir' %}success{% elif r.status == 'izin' %}warning{% else %}danger{% endif %}">
-                                            {{ r.get_status_display }}
-                                        </span>
-                                    </td>
-                                </tr>
-                                {% empty %}
-                                <tr><td colspan="4" class="text-center py-3 text-muted">Belum ada riwayat presensi.</td></tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
+      {% else %}
+        <div class="closed">Di luar jam presensi</div>
+        <small>Subuh 04.00–06.00 · Malam 18.00–20.30</small>
+      {% endif %}
     </div>
+  </section>
 
-    <!-- Modal Izin -->
-    {% if sesi_aktif %}
-    <div class="modal fade" id="modalIzin" tabindex="-1">
-        <div class="modal-dialog">
-            <form action="{% url 'ajukan_izin' %}" method="POST" enctype="multipart/form-data" class="modal-content">
-                {% csrf_token %}
-                <input type="hidden" name="sesi_id" value="{{ sesi_aktif.id }}">
-                <div class="modal-header">
-                    <h5 class="modal-title">Form Pengajuan Izin</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">Alasan</label>
-                        <textarea name="alasan" class="form-control" required></textarea>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Upload Bukti (JPG/PDF)</label>
-                        <input type="file" name="file_bukti" accept=".jpg,.jpeg,.png,.pdf" class="form-control" required>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="submit" class="btn btn-warning">Kirim Izin</button>
-                </div>
-            </form>
-        </div>
+  <section>
+    <h3 style="margin-bottom:10px;font-size:14px;color:var(--muted)">Rekap bulan {{ today|date:"F Y" }}</h3>
+    <div class="grid g-5">
+      <div class="card stat s-hadir"><span>Hadir</span><strong>{{ rekap.hadir }}</strong></div>
+      <div class="card stat s-terlambat"><span>Terlambat</span><strong>{{ rekap.terlambat }}</strong></div>
+      <div class="card stat s-izin"><span>Izin</span><strong>{{ rekap.izin }}</strong></div>
+      <div class="card stat s-sakit"><span>Sakit</span><strong>{{ rekap.sakit }}</strong></div>
+      <div class="card stat s-alpa"><span>Alpa</span><strong>{{ rekap.alpa }}</strong></div>
     </div>
-    {% endif %}
+  </section>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        function getLocation() {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(function(pos) {
-                    document.getElementById('lat').value = pos.coords.latitude;
-                    document.getElementById('lng').value = pos.coords.longitude;
-                    document.getElementById('formPresensi').submit();
-                }, function(err) {
-                    alert("Gagal mengambil lokasi GPS. Pastikan izin lokasi aktif.");
-                });
-            } else {
-                alert("Browser tidak mendukung geolokasi.");
-            }
-        }
-    </script>
-</body>
-</html>
+  <div class="grid g-main">
+    <section class="card">
+      <div class="card-head"><h2>Riwayat Terbaru</h2><a href="{% url 'riwayat' %}">Lihat semua</a></div>
+      {% if riwayat_terbaru %}
+      <div class="table-wrap"><table>
+        <thead><tr><th>Tanggal</th><th>Sesi</th><th>Waktu</th><th>Status</th></tr></thead>
+        <tbody>{% for p in riwayat_terbaru %}
+          <tr><td>{{ p.tanggal|date:"d M Y" }}</td><td>{{ p.sesi.get_nama_sesi_display }}</td>
+              <td>{{ p.waktu_presensi|time:"H:i"|default:"–" }}</td>
+              <td><span class="badge b-{{ p.status }}">{{ p.get_status_display }}</span></td></tr>
+        {% endfor %}</tbody>
+      </table></div>
+      {% else %}<div class="empty"><b>Belum ada riwayat</b>Presensi pertama Anda akan muncul di sini.</div>{% endif %}
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Sesi Hari Ini</h2></div>
+      <div class="card-body">
+        {% for s in sesi_hari_ini %}
+        <div class="sesi {% if s.aktif %}aktif{% endif %}">
+          <div><b>{{ s.sesi.get_nama_sesi_display }}</b><small>{{ s.sesi.jam_mulai|time:"H:i" }} – {{ s.sesi.jam_selesai|time:"H:i" }}</small></div>
+          {% if s.presensi %}<span class="badge b-{{ s.presensi.status }}">{{ s.presensi.get_status_display }}</span>
+          {% elif s.aktif %}<span class="badge b-pending">Sedang dibuka</span>
+          {% else %}<span class="badge b-none">Belum</span>{% endif %}
+        </div>
+        {% empty %}<div class="empty">Sesi presensi belum diatur.</div>{% endfor %}
+        {% if izin_pending %}<div class="alert alert-info" style="margin:16px 0 0">{{ izin_pending }} pengajuan izin menunggu persetujuan. <a href="{% url 'izin_saya' %}">Lihat</a></div>{% endif %}
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

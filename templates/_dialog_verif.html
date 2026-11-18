@@ -1,0 +1,11 @@
+<dialog id="dlgVerif">
+  <form method="post">{% csrf_token %}
+    <div class="dlg-head" data-role="title">Konfirmasi</div>
+    <div class="dlg-body">
+      <p style="margin-bottom:14px">Pengajuan dari <b data-role="who"></b>.</p>
+      <div class="field" style="margin:0"><label for="catatan">Catatan untuk penghuni (opsional)</label>
+        <textarea class="input" id="catatan" name="catatan_fasil" placeholder="Tuliskan catatan"></textarea></div>
+    </div>
+    <div class="dlg-foot"><button type="button" class="btn" data-close>Batal</button><button class="btn btn-primary">Konfirmasi</button></div>
+  </form>
+</dialog>

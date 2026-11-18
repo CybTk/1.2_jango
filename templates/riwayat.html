@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Riwayat Presensi{% endblock %}
+{% block heading %}{% if staf %}Riwayat Presensi Penghuni{% else %}Riwayat Presensi{% endif %}{% endblock %}
+{% block subheading %}{% if staf %}Pantau kehadiran seluruh penghuni{% else %}Catatan kehadiran Subuh dan Malam Anda{% endif %}{% endblock %}
+{% block content %}
+<div class="stack">
+  <div class="grid g-5">
+    <div class="card stat s-hadir"><span>Hadir</span><strong>{{ rekap.hadir }}</strong></div>
+    <div class="card stat s-terlambat"><span>Terlambat</span><strong>{{ rekap.terlambat }}</strong></div>
+    <div class="card stat s-izin"><span>Izin</span><strong>{{ rekap.izin }}</strong></div>
+    <div class="card stat s-sakit"><span>Sakit</span><strong>{{ rekap.sakit }}</strong></div>
+    <div class="card stat s-alpa"><span>Alpa</span><strong>{{ rekap.alpa }}</strong></div>
+  </div>
+  <section class="card">
+    <form class="filters" method="get">
+      {% if staf %}<div class="field grow"><label>Cari penghuni</label><input class="input" name="q" value="{{ f.q }}" placeholder="Nama atau NIM"></div>{% endif %}
+      <div class="field"><label>Tanggal</label><input class="input" type="date" name="tanggal" value="{{ f.tanggal }}"></div>
+      <div class="field"><label>Sesi</label>
+        <select class="input" name="sesi"><option value="">Semua</option>
+          <option value="subuh" {% if f.sesi == 'subuh' %}selected{% endif %}>Subuh</option>
+          <option value="malam" {% if f.sesi == 'malam' %}selected{% endif %}>Malam</option></select></div>
+      <div class="field"><label>Status</label>
+        <select class="input" name="status"><option value="">Semua</option>
+          {% for v,l in status_choices %}<option value="{{ v }}" {% if f.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+      {% if staf %}<div class="field"><label>Gedung</label>
+        <select class="input" name="gedung"><option value="">Semua</option>
+          {% for g in gedung_list %}<option value="{{ g.id }}" {% if f.gedung == g.id|stringformat:"s" %}selected{% endif %}>{{ g.nama_gedung }}</option>{% endfor %}</select></div>{% endif %}
+      <div class="field" style="flex:0"><button class="btn btn-primary">Terapkan</button></div>
+      <div class="field" style="flex:0"><a class="btn" href="{% url 'riwayat' %}">Reset</a></div>
+    </form>
+    {% if page_obj.object_list %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Tanggal</th>{% if staf %}<th>Penghuni</th>{% endif %}<th>Sesi</th><th>Waktu</th><th>Lokasi</th><th>Status</th>{% if staf %}<th></th>{% endif %}</tr></thead>
+      <tbody>{% for p in page_obj %}
+        <tr><td>{{ p.tanggal|date:"D, d M Y" }}</td>
+          {% if staf %}<td class="who"><b>{{ p.user.get_full_name|default:p.user.username }}</b><small>{{ p.user.nim_nip|default:"–" }}</small></td>{% endif %}
+          <td>{{ p.sesi.get_nama_sesi_display }}</td>
+          <td>{{ p.waktu_presensi|time:"H:i"|default:"–" }}</td>
+          <td>{% if p.waktu_presensi %}{% if p.is_in_radius %}<span class="badge b-hadir">Di asrama</span>{% else %}<span class="badge b-alpa">Luar radius</span>{% endif %}{% else %}–{% endif %}</td>
+          <td><span class="badge b-{{ p.status }}">{{ p.get_status_display }}</span></td>
+          {% if staf %}<td><button class="btn btn-sm" data-dialog="dlgKoreksi" data-url="{% url 'presensi_koreksi' p.id %}" data-who="{{ p.user.get_full_name|default:p.user.username }} · {{ p.tanggal|date:'d M' }} {{ p.sesi.get_nama_sesi_display }}" data-value="{{ p.status }}">Koreksi</button></td>{% endif %}</tr>
+      {% endfor %}</tbody>
+    </table></div>
+    {% include "_pagination.html" %}
+    {% else %}<div class="empty"><b>Tidak ada data</b>Ubah filter untuk melihat data lain.</div>{% endif %}
+  </section>
+</div>
+{% if staf %}
+<dialog id="dlgKoreksi">
+  <form method="post">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <div class="dlg-head">Koreksi Status Presensi</div>
+    <div class="dlg-body">
+      <p style="margin-bottom:14px"><b data-role="who"></b></p>
+      <div class="field" style="margin:0"><label for="kStatus">Status baru</label>
+        <select class="input" id="kStatus" name="status" data-role="value">{% for v,l in status_choices %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
+    </div>
+    <div class="dlg-foot"><button type="button" class="btn" data-close>Batal</button><button class="btn btn-primary">Simpan</button></div>
+  </form>
+</dialog>
+{% endif %}
+{% endblock %}

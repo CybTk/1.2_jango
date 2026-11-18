@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Detail Pengajuan{% endblock %}
+{% block heading %}Detail Pengajuan {{ izin.presensi.get_status_display }}{% endblock %}
+{% block subheading %}<a href="{% if staf %}{% url 'izin_list' %}{% else %}{% url 'izin_saya' %}{% endif %}">‹ Kembali ke daftar</a>{% endblock %}
+{% block content %}
+<div class="grid g-main" style="grid-template-columns:1fr 1.3fr;align-items:start">
+  <section class="card">
+    <div class="card-head"><h2>Informasi</h2><span class="badge b-{{ izin.status_persetujuan }}">{{ izin.get_status_persetujuan_display }}</span></div>
+    <div class="card-body">
+      <dl class="dl">
+        <dt>Penghuni</dt><dd>{{ izin.presensi.user.get_full_name|default:izin.presensi.user.username }}</dd>
+        <dt>NIM</dt><dd>{{ izin.presensi.user.nim_nip|default:"–" }}</dd>
+        <dt>Tanggal</dt><dd>{{ izin.presensi.tanggal|date:"l, d F Y" }}</dd>
+        <dt>Sesi</dt><dd>{{ izin.presensi.sesi.get_nama_sesi_display }}</dd>
+        <dt>Jenis</dt><dd>{{ izin.presensi.get_status_display }}</dd>
+        <dt>Alasan</dt><dd>{{ izin.alasan|linebreaksbr }}</dd>
+        <dt>Diajukan</dt><dd>{{ izin.created_at|date:"d M Y, H:i" }}</dd>
+        {% if izin.fasil %}<dt>Diproses oleh</dt><dd>{{ izin.fasil.get_full_name|default:izin.fasil.username }}</dd>{% endif %}
+        {% if izin.catatan_fasil %}<dt>Catatan fasil</dt><dd>{{ izin.catatan_fasil|linebreaksbr }}</dd>{% endif %}
+      </dl>
+      {% if izin.status_persetujuan == 'pending' %}
+      <div class="row-actions" style="margin-top:22px">
+        {% if staf %}
+          <button class="btn btn-success" data-dialog="dlgVerif" data-url="{% url 'verifikasi_izin' izin.id 'setuju' %}" data-title="Setujui izin" data-who="{{ izin.presensi.user.get_full_name|default:izin.presensi.user.username }}">Setujui</button>
+          <button class="btn btn-danger" data-dialog="dlgVerif" data-url="{% url 'verifikasi_izin' izin.id 'tolak' %}" data-title="Tolak izin" data-who="{{ izin.presensi.user.get_full_name|default:izin.presensi.user.username }}">Tolak</button>
+        {% elif izin.presensi.user == user %}
+          <form method="post" action="{% url 'izin_batal' izin.id %}" onsubmit="return confirm('Batalkan pengajuan ini?')">{% csrf_token %}
+            <button class="btn btn-danger">Batalkan Pengajuan</button></form>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Bukti Pendukung</h2><a href="{{ izin.file_bukti.url }}" target="_blank" rel="noopener">Buka di tab baru</a></div>
+    <div class="card-body">
+      {% if is_img %}<img class="preview" src="{{ izin.file_bukti.url }}" alt="Bukti izin">
+      {% elif is_pdf %}<iframe class="preview-pdf" src="{{ izin.file_bukti.url }}" title="Bukti izin (PDF)"></iframe>
+      {% else %}<div class="empty">Pratinjau tidak tersedia. <a href="{{ izin.file_bukti.url }}" target="_blank">Unduh berkas</a></div>{% endif %}
+    </div>
+  </section>
+</div>
+{% if staf %}{% include "_dialog_verif.html" %}{% endif %}
+<style>@media(max-width:1100px){.g-main[style]{grid-template-columns:1fr!important}}</style>
+{% endblock %}

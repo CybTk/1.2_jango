@@ -1,0 +1,11 @@
+{% load static %}<!DOCTYPE html>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block judul %}Terjadi kesalahan{% endblock %} · Presensi Asrama UNAND</title>
+<link rel="stylesheet" href="{% static 'css/app.css' %}"></head>
+<body style="background:linear-gradient(160deg,var(--navy-900),var(--navy-800));min-height:100vh;display:grid;place-items:center;padding:24px">
+<div class="card card-body" style="max-width:440px;text-align:center;padding:40px 32px">
+  <div style="font-size:64px;font-weight:700;color:var(--primary);line-height:1">{% block kode %}{% endblock %}</div>
+  <h1 style="font-size:20px;margin:12px 0 6px">{% block judul2 %}{% endblock %}</h1>
+  <p style="color:var(--muted);margin-bottom:24px">{% block pesan %}{% endblock %}</p>
+  <a class="btn btn-primary" href="/">Kembali ke Beranda</a>
+</div></body></html>

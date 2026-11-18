@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}{{ penghuni.get_full_name|default:penghuni.username }}{% endblock %}
+{% block heading %}{{ penghuni.get_full_name|default:penghuni.username }}{% endblock %}
+{% block subheading %}<a href="{% url 'penghuni_list' %}">‹ Data Penghuni</a>{% endblock %}
+{% block content %}
+<div class="stack">
+  <div class="grid g-main" style="grid-template-columns:1fr 1.6fr;align-items:start">
+    <section class="card">
+      <div class="card-head"><h2>Profil</h2><a class="btn btn-sm" href="{% url 'penghuni_ubah' penghuni.id %}">Ubah</a></div>
+      <div class="card-body">
+        <dl class="dl">
+          <dt>NIM</dt><dd>{{ penghuni.nim_nip|default:"–" }}</dd>
+          <dt>Username</dt><dd>{{ penghuni.username }}</dd>
+          <dt>Email</dt><dd>{{ penghuni.email|default:"–" }}</dd>
+          <dt>Kamar</dt><dd>{% if aktif %}{{ aktif.kamar.gedung.nama_gedung }} · {{ aktif.kamar.nomor_kamar }}{% else %}<span class="badge b-none">Tidak ada penempatan aktif</span>{% endif %}</dd>
+          <dt>Masuk</dt><dd>{% if aktif %}{{ aktif.tanggal_masuk|date:"d F Y" }}{% else %}–{% endif %}</dd>
+        </dl>
+        {% if aktif %}
+        <form method="post" action="{% url 'penghuni_keluar' penghuni.id %}" style="margin-top:20px" onsubmit="return confirm('Keluarkan penghuni dari kamar?')">{% csrf_token %}
+          <button class="btn btn-danger btn-sm">Keluarkan dari kamar</button></form>
+        {% endif %}
+        <h3 style="margin:24px 0 8px;font-size:13px;color:var(--muted)">Riwayat penempatan</h3>
+        {% for r in riwayat_kamar %}
+          <div class="sesi"><div><b>{{ r.kamar.gedung.nama_gedung }} · {{ r.kamar.nomor_kamar }}</b>
+            <small>{{ r.tanggal_masuk|date:"d M Y" }} – {% if r.tanggal_keluar %}{{ r.tanggal_keluar|date:"d M Y" }}{% else %}sekarang{% endif %}</small></div>
+            <span class="badge {% if r.status == 'aktif' %}b-hadir{% else %}b-none{% endif %}">{{ r.get_status_display }}</span></div>
+        {% empty %}<small>Belum ada riwayat.</small>{% endfor %}
+      </div>
+    </section>
+    <div class="stack">
+      <section>
+        <h3 style="margin-bottom:10px;font-size:14px;color:var(--muted)">Rekap keseluruhan</h3>
+        <div class="grid g-5">
+          <div class="card stat s-hadir"><span>Hadir</span><strong>{{ rekap.hadir }}</strong></div>
+          <div class="card stat s-terlambat"><span>Terlambat</span><strong>{{ rekap.terlambat }}</strong></div>
+          <div class="card stat s-izin"><span>Izin</span><strong>{{ rekap.izin }}</strong></div>
+          <div class="card stat s-sakit"><span>Sakit</span><strong>{{ rekap.sakit }}</strong></div>
+          <div class="card stat s-alpa"><span>Alpa</span><strong>{{ rekap.alpa }}</strong></div>
+        </div>
+      </section>
+      <section class="card">
+        <div class="card-head"><h2>15 Presensi Terakhir</h2><a href="{% url 'riwayat' %}?q={{ penghuni.nim_nip|default:penghuni.username }}">Lihat semua</a></div>
+        {% if terbaru %}<div class="table-wrap"><table>
+          <thead><tr><th>Tanggal</th><th>Sesi</th><th>Waktu</th><th>Status</th></tr></thead>
+          <tbody>{% for p in terbaru %}<tr><td>{{ p.tanggal|date:"D, d M Y" }}</td><td>{{ p.sesi.get_nama_sesi_display }}</td>
+            <td>{{ p.waktu_presensi|time:"H:i"|default:"–" }}</td><td><span class="badge b-{{ p.status }}">{{ p.get_status_display }}</span></td></tr>{% endfor %}</tbody>
+        </table></div>{% else %}<div class="empty"><b>Belum ada presensi</b></div>{% endif %}
+      </section>
+    </div>
+  </div>
+</div>
+<style>@media(max-width:1100px){.g-main[style]{grid-template-columns:1fr!important}}</style>
+{% endblock %}

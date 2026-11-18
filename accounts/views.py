@@ -1,74 +1,278 @@
-from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth.decorators import login_required
-from django.contrib import messages
-from django.utils import timezone
-from .models import Presensi, SesiPresensi, PengajuanIzin, PenghuniKamar, User, Gedung, Kamar
+import csv
+from datetime import date, timedelta
 from math import radians, cos, sin, asin, sqrt
 
-# Fungsi bantu hitung jarak dua titik koordinat (Haversine Formula)
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.views import PasswordChangeView
+from django.contrib.messages.views import SuccessMessageMixin
+from django.core.paginator import Paginator
+from django.db import transaction
+from django.db.models import Count, Q
+from django.http import HttpResponse
+from django.shortcuts import render, redirect, get_object_or_404
+from django.urls import reverse, reverse_lazy
+from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.http import require_POST
+
+from .forms import (PenghuniForm, GedungForm, KamarForm, SesiForm, IzinForm,
+                    ProfilForm, StyledPasswordChangeForm)
+
+from .models import Presensi, SesiPresensi, PengajuanIzin, PenghuniKamar, User, Gedung, Kamar
+
+
+# ---------------------------------------------------------------- helper
 def calculate_distance(lat1, lon1, lat2, lon2):
-    R = 6371000  # Radius bumi dalam meter
+    """Jarak dua titik koordinat dalam meter (Haversine)."""
+    R = 6371000
     phi1, phi2 = radians(lat1), radians(lat2)
     delta_phi = radians(lat2 - lat1)
     delta_lambda = radians(lon2 - lon1)
-    a = sin(delta_phi / 2)**2 + cos(phi1) * cos(phi2) * sin(delta_lambda / 2)**2
-    c = 2 * asin(sqrt(a))
-    return R * c
+    a = sin(delta_phi / 2) ** 2 + cos(phi1) * cos(phi2) * sin(delta_lambda / 2) ** 2
+    return R * 2 * asin(sqrt(a))
 
+
+def is_admin(u):
+    return u.is_superuser or u.role == 'superadmin'
+
+
+def is_fasil(u):
+    return u.role == 'fasil'
+
+
+def is_staf(u):
+    return is_admin(u) or is_fasil(u)
+
+
+def rekap(qs):
+    """Hitung jumlah per status -> {'hadir': 3, 'terlambat': 0, ...}"""
+    hasil = {s: 0 for s, _ in Presensi.STATUS_CHOICES}
+    for r in qs.order_by().values('status').annotate(n=Count('id')):
+        hasil[r['status']] = r['n']
+    return hasil
+
+
+def okupansi_gedung():
+    data = []
+    for g in Gedung.objects.prefetch_related('kamar_list'):
+        kamar = list(g.kamar_list.all())
+        kapasitas = sum(k.kapasitas for k in kamar)
+        terisi = PenghuniKamar.objects.filter(kamar__gedung=g, status='aktif').count()
+        persen = round(terisi * 100 / kapasitas) if kapasitas else 0
+        data.append({'gedung': g, 'jumlah_kamar': len(kamar), 'kapasitas': kapasitas,
+                     'terisi': terisi, 'persen': min(persen, 100)})
+    return data
+
+
+def _tolak_non_staf(request):
+    messages.error(request, "Akses ditolak.")
+    return redirect('home')
+
+
+# ---------------------------------------------------------------- dashboard
 @login_required
 def home(request):
     user = request.user
     today = timezone.localdate()
     now_time = timezone.localtime().time()
 
-    # 1. Dashboard Superadmin
-    if user.role == 'superadmin' or user.is_superuser:
-        total_penghuni = User.objects.filter(role='penghuni').count()
-        total_fasil = User.objects.filter(role='fasil').count()
-        total_gedung = Gedung.objects.count()
-        total_kamar = Kamar.objects.count()
-        
-        context = {
-            'total_penghuni': total_penghuni,
-            'total_fasil': total_fasil,
-            'total_gedung': total_gedung,
-            'total_kamar': total_kamar,
-        }
-        return render(request, 'dashboard_superadmin.html', context)
-
-    # 2. Dashboard Fasilitator
-    elif user.role == 'fasil':
-        pending_izin = PengajuanIzin.objects.filter(status_persetujuan='pending')
-        presensi_hari_ini = Presensi.objects.filter(tanggal=today).select_related('user', 'sesi')
-        
-        context = {
-            'pending_izin': pending_izin,
-            'presensi_hari_ini': presensi_hari_ini,
+    if is_admin(user):
+        return render(request, 'dashboard_superadmin.html', {
+            'total_penghuni': User.objects.filter(role='penghuni').count(),
+            'total_fasil': User.objects.filter(role='fasil').count(),
+            'total_gedung': Gedung.objects.count(),
+            'total_kamar': Kamar.objects.count(),
+            'rekap_hari_ini': rekap(Presensi.objects.filter(tanggal=today)),
+            'okupansi': okupansi_gedung(),
             'today': today,
-        }
-        return render(request, 'dashboard_fasil.html', context)
+        })
 
-    # 3. Dashboard Penghuni (Mahasiswa)
+    if is_fasil(user):
+        pending = (PengajuanIzin.objects.filter(status_persetujuan='pending')
+                   .select_related('presensi__user', 'presensi__sesi').order_by('created_at'))
+        terbaru = (Presensi.objects.filter(tanggal=today).select_related('user', 'sesi')
+                   .order_by('-waktu_presensi')[:10])
+        return render(request, 'dashboard_fasil.html', {
+            'pending_izin': pending[:5],
+            'total_pending': pending.count(),
+            'presensi_hari_ini': terbaru,
+            'rekap_hari_ini': rekap(Presensi.objects.filter(tanggal=today)),
+            'total_penghuni': PenghuniKamar.objects.filter(status='aktif').count(),
+            'today': today,
+        })
+
+    # penghuni
+    penghuni_kamar = (PenghuniKamar.objects.filter(user=user, status='aktif')
+                      .select_related('kamar__gedung').first())
+    sesi_aktif = SesiPresensi.objects.filter(jam_mulai__lte=now_time, jam_selesai__gte=now_time).first()
+    presensi_by_sesi = {p.sesi_id: p for p in Presensi.objects.filter(user=user, tanggal=today)}
+    sesi_hari_ini = [
+        {'sesi': s, 'presensi': presensi_by_sesi.get(s.id),
+         'aktif': bool(sesi_aktif and sesi_aktif.id == s.id)}
+        for s in SesiPresensi.objects.order_by('jam_mulai')
+    ]
+    bulan_ini = Presensi.objects.filter(user=user, tanggal__year=today.year, tanggal__month=today.month)
+    return render(request, 'home.html', {
+        'penghuni_kamar': penghuni_kamar,
+        'sesi_aktif': sesi_aktif,
+        'presensi_sesi_ini': presensi_by_sesi.get(sesi_aktif.id) if sesi_aktif else None,
+        'sesi_hari_ini': sesi_hari_ini,
+        'rekap': rekap(bulan_ini),
+        'riwayat_terbaru': (Presensi.objects.filter(user=user).select_related('sesi')
+                            .order_by('-tanggal', '-sesi__jam_mulai')[:5]),
+        'izin_pending': PengajuanIzin.objects.filter(presensi__user=user, status_persetujuan='pending').count(),
+        'today': today,
+    })
+
+
+# ---------------------------------------------------------------- riwayat (penghuni & staf)
+@login_required
+def riwayat(request):
+    staf = is_staf(request.user)
+    qs = Presensi.objects.select_related('user', 'sesi').order_by('-tanggal', '-sesi__jam_mulai')
+    if not staf:
+        qs = qs.filter(user=request.user)
+
+    f = {k: request.GET.get(k, '').strip() for k in ('q', 'tanggal', 'sesi', 'status', 'gedung')}
+    if f['tanggal']:
+        qs = qs.filter(tanggal=f['tanggal'])
+    if f['sesi']:
+        qs = qs.filter(sesi__nama_sesi=f['sesi'])
+    if f['status']:
+        qs = qs.filter(status=f['status'])
+    if staf:
+        if f['q']:
+            qs = qs.filter(Q(user__username__icontains=f['q']) | Q(user__first_name__icontains=f['q'])
+                           | Q(user__last_name__icontains=f['q']) | Q(user__nim_nip__icontains=f['q']))
+        if f['gedung']:
+            qs = qs.filter(user__riwayat_kamar__status='aktif',
+                           user__riwayat_kamar__kamar__gedung_id=f['gedung'])
+
+    query = request.GET.copy()
+    query.pop('page', None)
+    return render(request, 'riwayat.html', {
+        'page_obj': Paginator(qs, 20).get_page(request.GET.get('page')),
+        'f': f, 'staf': staf, 'rekap': rekap(qs), 'querystring': query.urlencode(),
+        'gedung_list': Gedung.objects.all(), 'status_choices': Presensi.STATUS_CHOICES,
+    })
+
+
+# ---------------------------------------------------------------- izin
+@login_required
+def izin_saya(request):
+    form = IzinForm(request.POST or None, request.FILES or None)
+    if request.method == 'POST' and form.is_valid():
+        d = form.cleaned_data
+        sesi_qs = SesiPresensi.objects.all()
+        if d['sesi'] != 'semua':
+            sesi_qs = sesi_qs.filter(nama_sesi=d['sesi'])
+        dibuat = dilewati = 0
+        berkas = d['file_bukti']
+        with transaction.atomic():
+            tgl = d['tanggal_mulai']
+            while tgl <= d['tanggal_selesai']:
+                for sesi in sesi_qs:
+                    presensi, baru = Presensi.objects.get_or_create(
+                        user=request.user, sesi=sesi, tanggal=tgl, defaults={'status': d['jenis']})
+                    if not baru:
+                        dilewati += 1
+                        continue
+                    berkas.seek(0)
+                    PengajuanIzin.objects.create(presensi=presensi, alasan=d['alasan'],
+                                                 file_bukti=berkas, status_persetujuan='pending')
+                    dibuat += 1
+                tgl += timedelta(days=1)
+        if dibuat:
+            messages.success(request, f"{dibuat} pengajuan terkirim. Menunggu persetujuan Fasil.")
+        if dilewati:
+            messages.warning(request, f"{dilewati} sesi dilewati karena sudah ada presensi/pengajuan.")
+        return redirect('izin_saya')
+    daftar = (PengajuanIzin.objects.filter(presensi__user=request.user)
+              .select_related('presensi__sesi').order_by('-presensi__tanggal', '-created_at'))
+    return render(request, 'izin_saya.html', {'daftar': daftar, 'form': form})
+
+
+@login_required
+def izin_list(request):
+    if not is_staf(request.user):
+        return _tolak_non_staf(request)
+    status = request.GET.get('status', 'pending')
+    qs = (PengajuanIzin.objects.select_related('presensi__user', 'presensi__sesi', 'fasil')
+          .order_by('-created_at'))
+    if status in ('pending', 'disetujui', 'ditolak'):
+        qs = qs.filter(status_persetujuan=status)
     else:
-        penghuni_kamar = PenghuniKamar.objects.filter(user=user, status='aktif').first()
-        riwayat_presensi = Presensi.objects.filter(user=user).order_by('-tanggal', '-sesi__jam_mulai')
-        
-        # Cek sesi aktif saat ini
-        sesi_aktif = SesiPresensi.objects.filter(jam_mulai__lte=now_time, jam_selesai__gte=now_time).first()
-        presensi_sesi_ini = None
-        if sesi_aktif:
-            presensi_sesi_ini = Presensi.objects.filter(user=user, sesi=sesi_aktif, tanggal=today).first()
-
-        context = {
-            'penghuni_kamar': penghuni_kamar,
-            'riwayat_presensi': riwayat_presensi,
-            'sesi_aktif': sesi_aktif,
-            'presensi_sesi_ini': presensi_sesi_ini,
-            'today': today,
-        }
-        return render(request, 'home.html', context)
+        status = 'semua'
+    counts = {s: PengajuanIzin.objects.filter(status_persetujuan=s).count()
+              for s in ('pending', 'disetujui', 'ditolak')}
+    query = request.GET.copy()
+    query.pop('page', None)
+    return render(request, 'izin_list.html', {
+        'page_obj': Paginator(qs, 15).get_page(request.GET.get('page')),
+        'status': status, 'counts': counts, 'querystring': query.urlencode(),
+    })
 
 
+@login_required
+@require_POST
+def verifikasi_izin(request, izin_id, aksi):
+    if not is_staf(request.user):
+        return _tolak_non_staf(request)
+    izin = get_object_or_404(PengajuanIzin, id=izin_id)
+    if aksi == 'setuju':
+        izin.status_persetujuan = 'disetujui'
+        if izin.presensi.status not in ('izin', 'sakit'):
+            izin.presensi.status = 'izin'
+        messages.success(request, f"Izin {izin.presensi.user.username} disetujui.")
+    elif aksi == 'tolak':
+        izin.status_persetujuan = 'ditolak'
+        izin.presensi.status = 'alpa'
+        messages.warning(request, f"Izin {izin.presensi.user.username} ditolak.")
+    else:
+        messages.error(request, "Aksi tidak dikenal.")
+        return redirect('izin_list')
+    izin.catatan_fasil = request.POST.get('catatan_fasil', '').strip() or None
+    izin.fasil = request.user
+    izin.presensi.save()
+    izin.save()
+    return redirect('izin_list')
+
+
+# ---------------------------------------------------------------- kelola data
+@login_required
+def penghuni_list(request):
+    if not is_staf(request.user):
+        return _tolak_non_staf(request)
+    q = request.GET.get('q', '').strip()
+    gedung_sel = request.GET.get('gedung', '').strip()
+    qs = (PenghuniKamar.objects.filter(status='aktif').select_related('user', 'kamar__gedung')
+          .order_by('kamar__gedung__nama_gedung', 'kamar__nomor_kamar', 'user__first_name'))
+    if q:
+        qs = qs.filter(Q(user__username__icontains=q) | Q(user__first_name__icontains=q)
+                       | Q(user__last_name__icontains=q) | Q(user__nim_nip__icontains=q))
+    if gedung_sel:
+        qs = qs.filter(kamar__gedung_id=gedung_sel)
+    query = request.GET.copy()
+    query.pop('page', None)
+    return render(request, 'penghuni_list.html', {
+        'page_obj': Paginator(qs, 20).get_page(request.GET.get('page')),
+        'q': q, 'gedung_sel': gedung_sel, 'gedung_list': Gedung.objects.all(),
+        'total': qs.count(), 'querystring': query.urlencode(),
+    })
+
+
+@login_required
+def gedung_list(request):
+    if not is_admin(request.user):
+        return _tolak_non_staf(request)
+    kamar = (Kamar.objects.select_related('gedung')
+             .annotate(terisi=Count('penghuni_list', filter=Q(penghuni_list__status='aktif')))
+             .order_by('gedung__nama_gedung', 'nomor_kamar'))
+    return render(request, 'gedung_list.html', {'okupansi': okupansi_gedung(), 'kamar_list': kamar})
+
+
+# ---------------------------------------------------------------- aksi penghuni (logika lama, belum diubah)
 @login_required
 def do_presensi(request):
     if request.method == 'POST':
@@ -118,51 +322,237 @@ def do_presensi(request):
     return redirect('home')
 
 
+
+
+# ================================================================ TAHAP 2: fitur tambahan
+def _aman(request, nxt, default):
+    if nxt and url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}):
+        return nxt
+    return default
+
+
+def _crud(request, form_class, instance, judul, sub, kembali, pesan, dua_kolom=True):
+    form = form_class(request.POST or None, instance=instance)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, pesan)
+        return redirect(kembali)
+    return render(request, 'form_page.html', {'form': form, 'judul': judul, 'sub': sub,
+                                              'batal_url': reverse(kembali), 'dua_kolom': dua_kolom})
+
+
+# ---- penghuni
 @login_required
-def ajukan_izin(request):
-    if request.method == 'POST':
-        user = request.user
-        sesi_id = request.POST.get('sesi_id')
-        alasan = request.POST.get('alasan')
-        file_bukti = request.FILES.get('file_bukti')
-        today = timezone.localdate()
-
-        sesi = get_object_or_404(SesiPresensi, id=sesi_id)
-        
-        # Buat record presensi status 'izin'
-        presensi, _ = Presensi.objects.get_or_create(
-            user=user, sesi=sesi, tanggal=today,
-            defaults={'status': 'izin'}
-        )
-
-        PengajuanIzin.objects.create(
-            presensi=presensi,
-            alasan=alasan,
-            file_bukti=file_bukti,
-            status_persetujuan='pending'
-        )
-        messages.success(request, "Pengajuan izin berhasil dikirim! Menunggu persetujuan Fasil.")
-
-    return redirect('home')
+def penghuni_tambah(request):
+    if not is_staf(request.user):
+        return _tolak_non_staf(request)
+    form = PenghuniForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        u = form.save()
+        messages.success(request, f"Penghuni {u.get_full_name() or u.username} berhasil ditambahkan.")
+        return redirect('penghuni_detail', user_id=u.id)
+    return render(request, 'form_page.html', {'form': form, 'judul': 'Tambah Penghuni',
+                  'sub': 'Buat akun penghuni dan tempatkan ke kamar', 'batal_url': reverse('penghuni_list'), 'dua_kolom': True})
 
 
 @login_required
-def verifikasi_izin(request, izin_id, aksi):
-    if request.user.role != 'fasil' and not request.user.is_staff and not request.user.is_superuser:
-        messages.error(request, "Akses ditolak.")
-        return redirect('home')
+def penghuni_ubah(request, user_id):
+    if not is_staf(request.user):
+        return _tolak_non_staf(request)
+    u = get_object_or_404(User, id=user_id, role='penghuni')
+    form = PenghuniForm(request.POST or None, instance=u)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, "Data penghuni diperbarui.")
+        return redirect('penghuni_detail', user_id=u.id)
+    return render(request, 'form_page.html', {'form': form, 'judul': f"Ubah Data: {u.get_full_name() or u.username}",
+                  'sub': 'Perbarui data akun atau pindahkan kamar', 'batal_url': reverse('penghuni_detail', args=[u.id]), 'dua_kolom': True})
 
-    izin = get_object_or_404(PengajuanIzin, id=izin_id)
-    if aksi == 'setuju':
-        izin.status_persetujuan = 'disetujui'
-        izin.presensi.status = 'izin'
-        messages.success(request, f"Izin {izin.presensi.user.username} disetujui.")
-    elif aksi == 'tolak':
-        izin.status_persetujuan = 'ditolak'
-        izin.presensi.status = 'alpa'
-        messages.warning(request, f"Izin {izin.presensi.user.username} ditolak.")
-    
-    izin.fasil = request.user
-    izin.presensi.save()
-    izin.save()
-    return redirect('home')
+
+@login_required
+def penghuni_detail(request, user_id):
+    if not is_staf(request.user):
+        return _tolak_non_staf(request)
+    u = get_object_or_404(User, id=user_id, role='penghuni')
+    presensi = Presensi.objects.filter(user=u)
+    today = timezone.localdate()
+    return render(request, 'penghuni_detail.html', {
+        'penghuni': u,
+        'aktif': u.riwayat_kamar.filter(status='aktif').select_related('kamar__gedung').first(),
+        'riwayat_kamar': u.riwayat_kamar.select_related('kamar__gedung').order_by('-tanggal_masuk'),
+        'rekap': rekap(presensi),
+        'rekap_bulan': rekap(presensi.filter(tanggal__year=today.year, tanggal__month=today.month)),
+        'terbaru': presensi.select_related('sesi').order_by('-tanggal', '-sesi__jam_mulai')[:15],
+    })
+
+
+@login_required
+@require_POST
+def penghuni_keluar(request, user_id):
+    if not is_staf(request.user):
+        return _tolak_non_staf(request)
+    u = get_object_or_404(User, id=user_id, role='penghuni')
+    n = u.riwayat_kamar.filter(status='aktif').update(status='non_aktif', tanggal_keluar=timezone.localdate())
+    messages.success(request, f"{u.get_full_name() or u.username} dikeluarkan dari kamar." if n else "Penghuni tidak punya penempatan aktif.")
+    return redirect('penghuni_list')
+
+
+# ---- gedung, kamar, sesi (admin)
+def _admin_only(request):
+    return None if is_admin(request.user) else _tolak_non_staf(request)
+
+
+@login_required
+def gedung_tambah(request):
+    return _admin_only(request) or _crud(request, GedungForm, None, 'Tambah Gedung', 'Titik koordinat dipakai untuk validasi lokasi presensi', 'gedung_list', 'Gedung ditambahkan.')
+
+
+@login_required
+def gedung_ubah(request, pk):
+    return _admin_only(request) or _crud(request, GedungForm, get_object_or_404(Gedung, pk=pk), 'Ubah Gedung', 'Perbarui data gedung', 'gedung_list', 'Gedung diperbarui.')
+
+
+@login_required
+def kamar_tambah(request):
+    return _admin_only(request) or _crud(request, KamarForm, None, 'Tambah Kamar', 'Tentukan gedung dan kapasitas kamar', 'gedung_list', 'Kamar ditambahkan.')
+
+
+@login_required
+def kamar_ubah(request, pk):
+    return _admin_only(request) or _crud(request, KamarForm, get_object_or_404(Kamar, pk=pk), 'Ubah Kamar', 'Perbarui data kamar', 'gedung_list', 'Kamar diperbarui.')
+
+
+@login_required
+def sesi_list(request):
+    if not is_admin(request.user):
+        return _tolak_non_staf(request)
+    return render(request, 'sesi_list.html', {'sesi_list': SesiPresensi.objects.order_by('jam_mulai')})
+
+
+@login_required
+def sesi_ubah(request, pk):
+    return _admin_only(request) or _crud(request, SesiForm, get_object_or_404(SesiPresensi, pk=pk), 'Ubah Jam Sesi', 'Jam ini menentukan kapan penghuni dapat melakukan presensi', 'sesi_list', 'Jam sesi diperbarui.')
+
+
+# ---- izin: detail & batal
+@login_required
+def izin_detail(request, izin_id):
+    izin = get_object_or_404(PengajuanIzin.objects.select_related('presensi__user', 'presensi__sesi', 'fasil'), id=izin_id)
+    staf = is_staf(request.user)
+    if not staf and izin.presensi.user_id != request.user.id:
+        return _tolak_non_staf(request)
+    nama = izin.file_bukti.name.lower()
+    return render(request, 'izin_detail.html', {
+        'izin': izin, 'staf': staf,
+        'is_pdf': nama.endswith('.pdf'), 'is_img': nama.endswith(('.jpg', '.jpeg', '.png')),
+    })
+
+
+@login_required
+@require_POST
+def izin_batal(request, izin_id):
+    izin = get_object_or_404(PengajuanIzin, id=izin_id, presensi__user=request.user, status_persetujuan='pending')
+    presensi = izin.presensi
+    izin.delete()
+    if presensi.waktu_presensi is None:
+        presensi.delete()
+    messages.success(request, "Pengajuan izin dibatalkan.")
+    return redirect('izin_saya')
+
+
+# ---- koreksi presensi manual
+@login_required
+@require_POST
+def presensi_koreksi(request, presensi_id):
+    if not is_staf(request.user):
+        return _tolak_non_staf(request)
+    p = get_object_or_404(Presensi, id=presensi_id)
+    status = request.POST.get('status')
+    if status in dict(Presensi.STATUS_CHOICES):
+        p.status = status
+        p.save()
+        messages.success(request, f"Status presensi {p.user.get_full_name() or p.user.username} diubah menjadi {p.get_status_display()}.")
+    else:
+        messages.error(request, "Status tidak valid.")
+    return redirect(_aman(request, request.POST.get('next'), 'riwayat'))
+
+
+# ---- laporan
+def _data_laporan(request):
+    today = timezone.localdate()
+    bulan = request.GET.get('bulan') or today.strftime('%Y-%m')
+    try:
+        y, m = map(int, bulan.split('-'))
+        date(y, m, 1)
+    except (ValueError, TypeError):
+        y, m = today.year, today.month
+        bulan = today.strftime('%Y-%m')
+    gedung = request.GET.get('gedung', '').strip()
+    qs = Presensi.objects.filter(tanggal__year=y, tanggal__month=m)
+    if gedung:
+        qs = qs.filter(user__riwayat_kamar__status='aktif', user__riwayat_kamar__kamar__gedung_id=gedung)
+    baris = {}
+    for r in (qs.order_by().values('user_id', 'user__first_name', 'user__last_name', 'user__username', 'user__nim_nip', 'status')
+              .annotate(n=Count('id'))):
+        nama = f"{r['user__first_name']} {r['user__last_name']}".strip() or r['user__username']
+        b = baris.setdefault(r['user_id'], {'id': r['user_id'], 'nama': nama, 'nim': r['user__nim_nip'] or '',
+                                            'hadir': 0, 'terlambat': 0, 'izin': 0, 'sakit': 0, 'alpa': 0, 'total': 0})
+        b[r['status']] += r['n']
+        b['total'] += r['n']
+    daftar = sorted(baris.values(), key=lambda b: b['nama'].lower())
+    for b in daftar:
+        b['persen'] = round((b['hadir'] + b['terlambat']) * 100 / b['total']) if b['total'] else 0
+    tren = []
+    for t in (qs.order_by().values('tanggal').annotate(total=Count('id'), ok=Count('id', filter=Q(status__in=['hadir', 'terlambat'])))
+              .order_by('tanggal')):
+        tren.append({'tanggal': t['tanggal'], 'total': t['total'], 'ok': t['ok'],
+                     'persen': round(t['ok'] * 100 / t['total']) if t['total'] else 0})
+    return bulan, y, m, gedung, daftar, tren, rekap(qs)
+
+
+@login_required
+def laporan(request):
+    if not is_staf(request.user):
+        return _tolak_non_staf(request)
+    bulan, y, m, gedung, daftar, tren, ringkasan = _data_laporan(request)
+    return render(request, 'laporan.html', {
+        'bulan': bulan, 'periode': date(y, m, 1), 'gedung_sel': gedung, 'gedung_list': Gedung.objects.all(),
+        'daftar': daftar, 'tren': tren, 'rekap': ringkasan,
+        'querystring': request.GET.urlencode(),
+    })
+
+
+@login_required
+def laporan_csv(request):
+    if not is_staf(request.user):
+        return _tolak_non_staf(request)
+    bulan, _, _, _, daftar, _, _ = _data_laporan(request)
+    resp = HttpResponse(content_type='text/csv; charset=utf-8')
+    resp['Content-Disposition'] = f'attachment; filename="laporan-presensi-{bulan}.csv"'
+    resp.write('\ufeff')  # agar Excel membaca UTF-8
+    w = csv.writer(resp)
+    w.writerow(['NIM', 'Nama', 'Hadir', 'Terlambat', 'Izin', 'Sakit', 'Alpa', 'Total', '% Kehadiran'])
+    for b in daftar:
+        w.writerow([b['nim'], b['nama'], b['hadir'], b['terlambat'], b['izin'], b['sakit'], b['alpa'], b['total'], b['persen']])
+    return resp
+
+
+# ---- profil & kata sandi
+@login_required
+def profil(request):
+    form = ProfilForm(request.POST or None, instance=request.user)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, "Profil diperbarui.")
+        return redirect('profil')
+    kamar = PenghuniKamar.objects.filter(user=request.user, status='aktif').select_related('kamar__gedung').first()
+    return render(request, 'profil.html', {'form': form, 'penghuni_kamar': kamar})
+
+
+class GantiPassword(SuccessMessageMixin, PasswordChangeView):
+    form_class = StyledPasswordChangeForm
+    template_name = 'form_page.html'
+    success_url = reverse_lazy('profil')
+    success_message = "Kata sandi berhasil diubah."
+    extra_context = {'judul': 'Ganti Kata Sandi', 'sub': 'Gunakan kata sandi yang kuat dan unik',
+                     'batal_url': reverse_lazy('profil')}

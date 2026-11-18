@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Profil Saya{% endblock %}
+{% block heading %}Profil Saya{% endblock %}
+{% block subheading %}Kelola data akun Anda{% endblock %}
+{% block content %}
+<div class="grid g-main" style="grid-template-columns:1fr 1.4fr;align-items:start">
+  <section class="card"><div class="card-body" style="text-align:center">
+    <div class="avatar" style="width:72px;height:72px;font-size:28px;margin:0 auto 12px">{{ user.get_full_name|default:user.username|slice:":1"|upper }}</div>
+    <h2 style="font-size:18px">{{ user.get_full_name|default:user.username }}</h2>
+    <p style="color:var(--muted)">{% if user.is_superuser %}Superadmin{% else %}{{ user.get_role_display }}{% endif %}</p>
+    <div class="dl" style="text-align:left;margin-top:20px">
+      <dt>Username</dt><dd>{{ user.username }}</dd>
+      <dt>NIM / ID</dt><dd>{{ user.nim_nip|default:"–" }}</dd>
+      {% if penghuni_kamar %}<dt>Kamar</dt><dd>{{ penghuni_kamar.kamar.gedung.nama_gedung }} · {{ penghuni_kamar.kamar.nomor_kamar }}</dd>{% endif %}
+    </div>
+    <a class="btn" style="margin-top:20px;width:100%;justify-content:center" href="{% url 'ganti_password' %}">Ganti kata sandi</a>
+  </div></section>
+  <section class="card">
+    <div class="card-head"><h2>Ubah Data Diri</h2></div>
+    <div class="card-body cols-2"><form method="post" novalidate>{% csrf_token %}
+      {% include "_form_fields.html" %}
+      <button class="btn btn-primary">Simpan Perubahan</button></form></div>
+  </section>
+</div>
+<style>@media(max-width:1100px){.g-main[style]{grid-template-columns:1fr!important}}</style>
+{% endblock %}

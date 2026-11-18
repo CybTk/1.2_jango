@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Pengajuan Izin{% endblock %}
+{% block heading %}Pengajuan Izin{% endblock %}
+{% block subheading %}Ajukan izin atau sakit untuk satu hari hingga 14 hari{% endblock %}
+{% block content %}
+<div class="grid g-main" style="grid-template-columns:1fr 1.5fr;align-items:start">
+  <section class="card">
+    <div class="card-head"><h2>Form Pengajuan</h2></div>
+    <div class="card-body"><form method="post" action="{% url 'izin_saya' %}" enctype="multipart/form-data" novalidate>{% csrf_token %}
+      {% include "_form_fields.html" %}
+      <button class="btn btn-primary" style="width:100%;justify-content:center"><svg class="icon"><use href="#i-file"/></svg>Kirim Pengajuan</button>
+    </form></div>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Riwayat Pengajuan</h2></div>
+    {% if daftar %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Tanggal</th><th>Sesi</th><th>Jenis</th><th>Status</th><th></th></tr></thead>
+      <tbody>{% for i in daftar %}
+        <tr><td>{{ i.presensi.tanggal|date:"d M Y" }}</td><td>{{ i.presensi.sesi.get_nama_sesi_display }}</td>
+          <td><span class="badge b-{{ i.presensi.status }}">{{ i.presensi.get_status_display }}</span></td>
+          <td><span class="badge b-{{ i.status_persetujuan }}">{{ i.get_status_persetujuan_display }}</span></td>
+          <td><div class="row-actions"><a class="btn btn-sm" href="{% url 'izin_detail' i.id %}">Detail</a>
+            {% if i.status_persetujuan == 'pending' %}<form method="post" action="{% url 'izin_batal' i.id %}" onsubmit="return confirm('Batalkan pengajuan ini?')">{% csrf_token %}<button class="btn btn-danger btn-sm">Batalkan</button></form>{% endif %}</div></td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+    {% else %}<div class="empty"><b>Belum ada pengajuan</b>Pengajuan Anda akan tampil di sini.</div>{% endif %}
+  </section>
+</div>
+<style>@media(max-width:1100px){.g-main[style]{grid-template-columns:1fr!important}}</style>
+{% endblock %}

@@ -1,0 +1,16 @@
+=== 1) Di config/settings.py, cari blok TEMPLATES -> OPTIONS -> context_processors, tambahkan baris terakhir: ===
+
+            'context_processors': [
+                'django.template.context_processors.debug',
+                'django.template.context_processors.request',
+                'django.contrib.auth.context_processors.auth',
+                'django.contrib.messages.context_processors.messages',
+                'accounts.context_processors.notifikasi',      # <-- TAMBAHKAN INI
+            ],
+
+=== 2) Di paling bawah config/settings.py tambahkan: ===
+
+LOGOUT_REDIRECT_URL = '/login/'
+
+# Email dev: tautan reset password dicetak di terminal. Ganti ke SMTP saat produksi.
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'

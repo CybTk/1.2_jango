@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Persetujuan Izin{% endblock %}
+{% block heading %}Persetujuan Izin{% endblock %}
+{% block subheading %}Tinjau bukti dan putuskan pengajuan izin penghuni{% endblock %}
+{% block content %}
+<section class="card">
+  <div class="tabs">
+    <a href="?status=pending" class="{% if status == 'pending' %}on{% endif %}">Menunggu<em>{{ counts.pending }}</em></a>
+    <a href="?status=disetujui" class="{% if status == 'disetujui' %}on{% endif %}">Disetujui<em>{{ counts.disetujui }}</em></a>
+    <a href="?status=ditolak" class="{% if status == 'ditolak' %}on{% endif %}">Ditolak<em>{{ counts.ditolak }}</em></a>
+    <a href="?status=semua" class="{% if status == 'semua' %}on{% endif %}">Semua</a>
+  </div>
+  {% if page_obj.object_list %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Penghuni</th><th>Tanggal &amp; Sesi</th><th>Alasan</th><th>Bukti</th><th>Status</th><th></th></tr></thead>
+    <tbody>{% for i in page_obj %}
+      <tr>
+        <td class="who"><b>{{ i.presensi.user.get_full_name|default:i.presensi.user.username }}</b><small>{{ i.presensi.user.nim_nip|default:"–" }}</small></td>
+        <td>{{ i.presensi.tanggal|date:"d M Y" }}<small style="display:block">{{ i.presensi.sesi.get_nama_sesi_display }}</small></td>
+        <td><div class="truncate" title="{{ i.alasan }}">{{ i.alasan }}</div><small>Diajukan {{ i.created_at|date:"d M, H:i" }}</small></td>
+        <td><a href="{% url 'izin_detail' i.id %}">Detail &amp; bukti</a></td>
+        <td><span class="badge b-{{ i.status_persetujuan }}">{{ i.get_status_persetujuan_display }}</span>
+            {% if i.fasil %}<small style="display:block">oleh {{ i.fasil.get_full_name|default:i.fasil.username }}</small>{% endif %}</td>
+        <td>{% if i.status_persetujuan == 'pending' %}<div class="row-actions">
+          <button class="btn btn-success btn-sm" data-dialog="dlgVerif" data-url="{% url 'verifikasi_izin' i.id 'setuju' %}" data-title="Setujui izin" data-who="{{ i.presensi.user.get_full_name|default:i.presensi.user.username }}">Setujui</button>
+          <button class="btn btn-danger btn-sm" data-dialog="dlgVerif" data-url="{% url 'verifikasi_izin' i.id 'tolak' %}" data-title="Tolak izin" data-who="{{ i.presensi.user.get_full_name|default:i.presensi.user.username }}">Tolak</button>
+        </div>{% endif %}</td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% include "_pagination.html" %}
+  {% else %}<div class="empty"><b>Tidak ada pengajuan</b>Belum ada data pada kategori ini.</div>{% endif %}
+</section>
+
+{% include "_dialog_verif.html" %}
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ judul }}{% endblock %}
+{% block heading %}{{ judul }}{% endblock %}
+{% block subheading %}{{ sub }}{% endblock %}
+{% block content %}
+<section class="card" style="max-width:{% if dua_kolom %}820{% else %}520{% endif %}px">
+  <div class="card-body {% if dua_kolom %}cols-2{% endif %}">
+    <form method="post" novalidate>{% csrf_token %}
+      {% include "_form_fields.html" %}
+      <div class="row-actions" style="margin-top:8px">
+        <button class="btn btn-primary" type="submit">Simpan</button>
+        <a class="btn" href="{{ batal_url }}">Batal</a>
+      </div>
+    </form>
+  </div>
+</section>
+{% endblock %}

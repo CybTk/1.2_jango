@@ -1,0 +1,12 @@
+{% if page_obj.paginator.count %}
+<div class="pager">
+  <small>Menampilkan {{ page_obj.start_index }}–{{ page_obj.end_index }} dari {{ page_obj.paginator.count }} data</small>
+  {% if page_obj.has_other_pages %}
+  <div class="links">
+    {% if page_obj.has_previous %}<a class="btn btn-sm" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page_obj.previous_page_number }}">‹ Sebelumnya</a>{% endif %}
+    <span class="btn btn-sm" style="pointer-events:none">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}<a class="btn btn-sm" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page_obj.next_page_number }}">Berikutnya ›</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
