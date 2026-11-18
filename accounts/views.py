@@ -1,6 +1,6 @@
 import csv
 from datetime import date, timedelta
-from math import radians, cos, sin, asin, sqrt
+from math import radians, cos, sin, asin, sqrt, isfinite
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -16,7 +16,7 @@ from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
-from .forms import (PenghuniForm, GedungForm, KamarForm, SesiForm, IzinForm,
+from .forms import (PenghuniForm, GedungForm, KamarForm, SesiForm, SesiTambahForm, IzinForm,
                     ProfilForm, StyledPasswordChangeForm)
 
 from .models import Presensi, SesiPresensi, PengajuanIzin, PenghuniKamar, User, Gedung, Kamar
@@ -43,6 +43,10 @@ def is_fasil(u):
 
 def is_staf(u):
     return is_admin(u) or is_fasil(u)
+
+
+def is_penghuni(u):
+    return u.role == 'penghuni' and not is_admin(u)
 
 
 def rekap(qs):
@@ -161,6 +165,8 @@ def riwayat(request):
 # ---------------------------------------------------------------- izin
 @login_required
 def izin_saya(request):
+    if not is_penghuni(request.user):
+        return _tolak_non_staf(request)
     form = IzinForm(request.POST or None, request.FILES or None)
     if request.method == 'POST' and form.is_valid():
         d = form.cleaned_data
@@ -176,8 +182,13 @@ def izin_saya(request):
                     presensi, baru = Presensi.objects.get_or_create(
                         user=request.user, sesi=sesi, tanggal=tgl, defaults={'status': d['jenis']})
                     if not baru:
-                        dilewati += 1
-                        continue
+                        presensi = Presensi.objects.select_for_update().get(pk=presensi.pk)
+                        sudah_diajukan = PengajuanIzin.objects.filter(presensi=presensi).exists()
+                        if presensi.status != 'alpa' or sudah_diajukan:
+                            dilewati += 1
+                            continue
+                        presensi.status = d['jenis']
+                        presensi.save(update_fields=['status'])
                     berkas.seek(0)
                     PengajuanIzin.objects.create(presensi=presensi, alasan=d['alasan'],
                                                  file_bukti=berkas, status_persetujuan='pending')
@@ -219,23 +230,34 @@ def izin_list(request):
 def verifikasi_izin(request, izin_id, aksi):
     if not is_staf(request.user):
         return _tolak_non_staf(request)
-    izin = get_object_or_404(PengajuanIzin, id=izin_id)
-    if aksi == 'setuju':
-        izin.status_persetujuan = 'disetujui'
-        if izin.presensi.status not in ('izin', 'sakit'):
-            izin.presensi.status = 'izin'
-        messages.success(request, f"Izin {izin.presensi.user.username} disetujui.")
-    elif aksi == 'tolak':
-        izin.status_persetujuan = 'ditolak'
-        izin.presensi.status = 'alpa'
-        messages.warning(request, f"Izin {izin.presensi.user.username} ditolak.")
-    else:
+    if aksi not in ('setuju', 'tolak'):
         messages.error(request, "Aksi tidak dikenal.")
         return redirect('izin_list')
-    izin.catatan_fasil = request.POST.get('catatan_fasil', '').strip() or None
-    izin.fasil = request.user
-    izin.presensi.save()
-    izin.save()
+
+    with transaction.atomic():
+        izin = get_object_or_404(
+            PengajuanIzin.objects.select_for_update().select_related('presensi__user'),
+            id=izin_id,
+        )
+        if izin.status_persetujuan != 'pending':
+            messages.warning(request, "Pengajuan ini sudah diproses dan tidak dapat diubah lagi.")
+            return redirect('izin_list')
+
+        presensi = Presensi.objects.select_for_update().get(pk=izin.presensi_id)
+        if aksi == 'setuju':
+            izin.status_persetujuan = 'disetujui'
+            if presensi.status not in ('izin', 'sakit'):
+                presensi.status = 'izin'
+            messages.success(request, f"Izin {presensi.user.username} disetujui.")
+        else:
+            izin.status_persetujuan = 'ditolak'
+            presensi.status = 'alpa'
+            messages.warning(request, f"Izin {presensi.user.username} ditolak.")
+
+        izin.catatan_fasil = request.POST.get('catatan_fasil', '').strip() or None
+        izin.fasil = request.user
+        presensi.save(update_fields=['status'])
+        izin.save(update_fields=['status_persetujuan', 'catatan_fasil', 'fasil'])
     return redirect('izin_list')
 
 
@@ -274,50 +296,60 @@ def gedung_list(request):
 
 # ---------------------------------------------------------------- aksi penghuni (logika lama, belum diubah)
 @login_required
+@require_POST
 def do_presensi(request):
-    if request.method == 'POST':
-        user = request.user
-        lat = float(request.POST.get('latitude', 0))
-        lng = float(request.POST.get('longitude', 0))
-        
-        now = timezone.localtime()
-        today = now.date()
-        now_time = now.time()
+    if not is_penghuni(request.user):
+        return _tolak_non_staf(request)
+    user = request.user
+    try:
+        lat = float(request.POST.get('latitude', ''))
+        lng = float(request.POST.get('longitude', ''))
+    except (TypeError, ValueError):
+        messages.error(request, "Lokasi tidak valid. Aktifkan GPS lalu coba lagi.")
+        return redirect('home')
 
-        sesi = SesiPresensi.objects.filter(jam_mulai__lte=now_time, jam_selesai__gte=now_time).first()
-        if not sesi:
-            messages.error(request, "Di luar jam presensi Subuh (04.00-06.00) atau Malam (18.00-20.30).")
-            return redirect('home')
+    if not (isfinite(lat) and isfinite(lng) and -90 <= lat <= 90 and -180 <= lng <= 180):
+        messages.error(request, "Lokasi tidak valid. Aktifkan GPS lalu coba lagi.")
+        return redirect('home')
 
-        # Cek alokasi kamar & gedung
-        penghuni = PenghuniKamar.objects.filter(user=user, status='aktif').first()
-        if not penghuni:
-            messages.error(request, "Kamu belum terdaftar di kamar/gedung asrama manapun.")
-            return redirect('home')
+    now = timezone.localtime()
+    today = now.date()
+    now_time = now.time()
 
-        gedung = penghuni.kamar.gedung
-        jarak = calculate_distance(lat, lng, float(gedung.latitude), float(gedung.longitude))
-        is_in_radius = jarak <= gedung.radius_meter
+    sesi = SesiPresensi.objects.filter(jam_mulai__lte=now_time, jam_selesai__gte=now_time).first()
+    if not sesi:
+        messages.error(request, "Di luar jam presensi Subuh (04.00-06.00) atau Malam (18.00-20.30).")
+        return redirect('home')
 
-        if not is_in_radius:
-            messages.error(request, f"Kamu berada di luar radius asrama ({int(jarak)}m dari gedung).")
-            return redirect('home')
+    # Cek alokasi kamar & gedung
+    penghuni = PenghuniKamar.objects.filter(user=user, status='aktif').select_related('kamar__gedung').first()
+    if not penghuni:
+        messages.error(request, "Kamu belum terdaftar di kamar/gedung asrama manapun.")
+        return redirect('home')
 
-        presensi, created = Presensi.objects.get_or_create(
-            user=user, sesi=sesi, tanggal=today,
-            defaults={
-                'waktu_presensi': now,
-                'status': 'hadir',
-                'latitude': lat,
-                'longitude': lng,
-                'is_in_radius': True
-            }
-        )
-        
-        if not created:
-            messages.warning(request, "Kamu sudah melakukan presensi pada sesi ini.")
-        else:
-            messages.success(request, f"Presensi {sesi.get_nama_sesi_display()} berhasil tercatat!")
+    gedung = penghuni.kamar.gedung
+    jarak = calculate_distance(lat, lng, float(gedung.latitude), float(gedung.longitude))
+    is_in_radius = jarak <= gedung.radius_meter
+
+    if not is_in_radius:
+        messages.error(request, f"Kamu berada di luar radius asrama ({int(jarak)}m dari gedung).")
+        return redirect('home')
+
+    _, created = Presensi.objects.get_or_create(
+        user=user, sesi=sesi, tanggal=today,
+        defaults={
+            'waktu_presensi': now,
+            'status': 'hadir',
+            'latitude': lat,
+            'longitude': lng,
+            'is_in_radius': True
+        }
+    )
+
+    if not created:
+        messages.warning(request, "Kamu sudah melakukan presensi pada sesi ini.")
+    else:
+        messages.success(request, f"Presensi {sesi.get_nama_sesi_display()} berhasil tercatat!")
 
     return redirect('home')
 
@@ -426,7 +458,26 @@ def kamar_ubah(request, pk):
 def sesi_list(request):
     if not is_admin(request.user):
         return _tolak_non_staf(request)
-    return render(request, 'sesi_list.html', {'sesi_list': SesiPresensi.objects.order_by('jam_mulai')})
+    sesi_list = SesiPresensi.objects.order_by('jam_mulai')
+    return render(request, 'sesi_list.html', {
+        'sesi_list': sesi_list,
+        'sesi_bisa_ditambah': sesi_list.count() < len(SesiPresensi.NAMA_SESI_CHOICES),
+    })
+
+
+@login_required
+def sesi_tambah(request):
+    if not is_admin(request.user):
+        return _tolak_non_staf(request)
+    return _crud(
+        request,
+        SesiTambahForm,
+        None,
+        'Tambah Sesi Presensi',
+        'Tambahkan sesi Subuh atau Malam yang belum tersedia',
+        'sesi_list',
+        'Sesi presensi ditambahkan.',
+    )
 
 
 @login_required
@@ -439,7 +490,7 @@ def sesi_ubah(request, pk):
 def izin_detail(request, izin_id):
     izin = get_object_or_404(PengajuanIzin.objects.select_related('presensi__user', 'presensi__sesi', 'fasil'), id=izin_id)
     staf = is_staf(request.user)
-    if not staf and izin.presensi.user_id != request.user.id:
+    if not staf and (not is_penghuni(request.user) or izin.presensi.user_id != request.user.id):
         return _tolak_non_staf(request)
     nama = izin.file_bukti.name.lower()
     return render(request, 'izin_detail.html', {
@@ -451,11 +502,19 @@ def izin_detail(request, izin_id):
 @login_required
 @require_POST
 def izin_batal(request, izin_id):
-    izin = get_object_or_404(PengajuanIzin, id=izin_id, presensi__user=request.user, status_persetujuan='pending')
-    presensi = izin.presensi
-    izin.delete()
-    if presensi.waktu_presensi is None:
-        presensi.delete()
+    if not is_penghuni(request.user):
+        return _tolak_non_staf(request)
+    with transaction.atomic():
+        izin = get_object_or_404(
+            PengajuanIzin.objects.select_for_update(),
+            id=izin_id,
+            presensi__user=request.user,
+            status_persetujuan='pending',
+        )
+        presensi = Presensi.objects.select_for_update().get(pk=izin.presensi_id)
+        izin.delete()
+        if presensi.waktu_presensi is None:
+            presensi.delete()
     messages.success(request, "Pengajuan izin dibatalkan.")
     return redirect('izin_saya')
 

@@ -39,7 +39,7 @@
         <a href="{% url 'gedung_list' %}"><svg class="icon"><use href="#i-building"/></svg>Gedung &amp; Kamar</a>
         <a href="{% url 'riwayat' %}"><svg class="icon"><use href="#i-clock"/></svg>Rekap Presensi</a>
         <a href="{% url 'izin_list' %}"><svg class="icon"><use href="#i-file"/></svg>Pengajuan Izin</a>
-        <a href="{% url 'admin:index' %}"><svg class="icon"><use href="#i-shield"/></svg>Panel Admin Django</a>
+        {% if user.is_staff %}<a href="{% url 'admin:index' %}"><svg class="icon"><use href="#i-shield"/></svg>Panel Admin Django</a>{% endif %}
       </div>
     </section>
   </div>

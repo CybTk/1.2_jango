@@ -29,7 +29,7 @@
         <a href="{% url 'penghuni_list' %}" class="{% if page == 'penghuni_list' %}active{% endif %}"><svg class="icon"><use href="#i-users"/></svg>Data Penghuni</a>
         <a href="{% url 'gedung_list' %}" class="{% if page == 'gedung_list' %}active{% endif %}"><svg class="icon"><use href="#i-building"/></svg>Gedung &amp; Kamar</a>
         <a href="{% url 'sesi_list' %}" class="{% if page == 'sesi_list' or page == 'sesi_ubah' %}active{% endif %}"><svg class="icon"><use href="#i-sliders"/></svg>Pengaturan Sesi</a>
-        <a href="{% url 'admin:index' %}"><svg class="icon"><use href="#i-shield"/></svg>Panel Admin</a>
+        {% if user.is_staff %}<a href="{% url 'admin:index' %}"><svg class="icon"><use href="#i-shield"/></svg>Panel Admin</a>{% endif %}
       {% elif user.role == 'fasil' %}
         <div class="nav-label">Menu Fasilitator</div>
         <a href="{% url 'home' %}" class="{% if page == 'home' %}active{% endif %}"><svg class="icon"><use href="#i-home"/></svg>Dashboard</a>

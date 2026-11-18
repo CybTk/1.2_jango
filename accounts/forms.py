@@ -136,6 +136,26 @@ class SesiForm(StyledMixin, forms.ModelForm):
         return d
 
 
+class SesiTambahForm(StyledMixin, forms.ModelForm):
+    class Meta:
+        model = SesiPresensi
+        fields = ['nama_sesi', 'jam_mulai', 'jam_selesai']
+        labels = {'nama_sesi': 'Nama sesi', 'jam_mulai': 'Jam mulai', 'jam_selesai': 'Jam selesai'}
+        widgets = {'jam_mulai': TIME(), 'jam_selesai': TIME()}
+
+    def clean_nama_sesi(self):
+        nama_sesi = self.cleaned_data['nama_sesi']
+        if SesiPresensi.objects.filter(nama_sesi=nama_sesi).exists():
+            raise ValidationError('Sesi ini sudah tersedia. Ubah jam pada sesi yang sudah ada.')
+        return nama_sesi
+
+    def clean(self):
+        d = super().clean()
+        if d.get('jam_mulai') and d.get('jam_selesai') and d['jam_selesai'] <= d['jam_mulai']:
+            self.add_error('jam_selesai', 'Jam selesai harus setelah jam mulai.')
+        return d
+
+
 # ------------------------------------------------------------ izin
 class IzinForm(StyledMixin, forms.Form):
     jenis = forms.ChoiceField(label='Jenis', choices=[('izin', 'Izin'), ('sakit', 'Sakit')])

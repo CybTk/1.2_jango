@@ -53,6 +53,7 @@ urlpatterns = [
     path('kelola/kamar/tambah/', accounts_views.kamar_tambah, name='kamar_tambah'),
     path('kelola/kamar/<int:pk>/ubah/', accounts_views.kamar_ubah, name='kamar_ubah'),
     path('kelola/sesi/', accounts_views.sesi_list, name='sesi_list'),
+    path('kelola/sesi/tambah/', accounts_views.sesi_tambah, name='sesi_tambah'),
     path('kelola/sesi/<int:pk>/ubah/', accounts_views.sesi_ubah, name='sesi_ubah'),
     path('kelola/presensi/<int:presensi_id>/koreksi/', accounts_views.presensi_koreksi, name='presensi_koreksi'),
     path('kelola/laporan/', accounts_views.laporan, name='laporan'),

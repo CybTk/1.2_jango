@@ -4,6 +4,9 @@
 {% block subheading %}Jam buka dan tutup presensi harian{% endblock %}
 {% block content %}
 <div class="grid g-2" style="max-width:820px">
+  {% if sesi_bisa_ditambah %}
+  <div style="grid-column:1/-1"><a class="btn btn-primary" href="{% url 'sesi_tambah' %}">Tambah sesi</a></div>
+  {% endif %}
   {% for s in sesi_list %}
   <div class="card card-body">
     <div style="display:flex;justify-content:space-between;align-items:start">
@@ -13,6 +16,6 @@
     <p style="font-size:26px;font-weight:700;margin-top:14px">{{ s.jam_mulai|time:"H:i" }} – {{ s.jam_selesai|time:"H:i" }}</p>
     <small>Penghuni dapat presensi pada rentang waktu ini.</small>
   </div>
-  {% empty %}<div class="card empty" style="grid-column:1/-1"><b>Belum ada sesi</b>Tambahkan sesi Subuh dan Malam lewat Panel Admin.</div>{% endfor %}
+  {% empty %}<div class="card empty" style="grid-column:1/-1"><b>Belum ada sesi</b>{% if sesi_bisa_ditambah %}Gunakan tombol Tambah sesi untuk mengatur sesi presensi.{% endif %}</div>{% endfor %}
 </div>
 {% endblock %}
