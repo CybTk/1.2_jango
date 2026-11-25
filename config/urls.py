@@ -20,6 +20,7 @@ from django.contrib.auth import views as auth_views
 from django.conf import settings
 from django.conf.urls.static import static
 from accounts import views as accounts_views
+from accounts import webauthn as webauthn_views
 from accounts.forms import StyledPasswordResetForm, StyledSetPasswordForm
 
 urlpatterns = [
@@ -42,6 +43,11 @@ urlpatterns = [
     # Tahap 2
     path('profil/', accounts_views.profil, name='profil'),
     path('profil/password/', accounts_views.GantiPassword.as_view(), name='ganti_password'),
+    path('profil/passkey/opsi-daftar/', webauthn_views.registration_options, name='passkey_registration_options'),
+    path('profil/passkey/daftar/', webauthn_views.register_credential, name='passkey_register'),
+    path('profil/passkey/<int:credential_id>/hapus/', webauthn_views.delete_credential, name='passkey_delete'),
+    path('presensi/passkey/opsi/', webauthn_views.authentication_options, name='passkey_authentication_options'),
+    path('presensi/passkey/verifikasi/', webauthn_views.authenticate_credential, name='passkey_authenticate'),
     path('izin/<int:izin_id>/', accounts_views.izin_detail, name='izin_detail'),
     path('izin/<int:izin_id>/batal/', accounts_views.izin_batal, name='izin_batal'),
     path('kelola/penghuni/tambah/', accounts_views.penghuni_tambah, name='penghuni_tambah'),

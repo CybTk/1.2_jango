@@ -20,9 +20,18 @@
           <div class="done"><svg class="icon"><use href="#i-check"/></svg>Presensi {{ sesi_aktif.get_nama_sesi_display }}: {{ presensi_sesi_ini.get_status_display }}</div>
           {% if presensi_sesi_ini.waktu_presensi %}<small>Tercatat pukul {{ presensi_sesi_ini.waktu_presensi|time:"H:i" }}</small>{% endif %}
         {% else %}
-          <form id="formPresensi" method="post" action="{% url 'do_presensi' %}">{% csrf_token %}
+          <form id="formPresensi" method="post" action="{% url 'do_presensi' %}"
+                data-passkey-options="{% url 'passkey_authentication_options' %}"
+                data-passkey-verify="{% url 'passkey_authenticate' %}">{% csrf_token %}
             <input type="hidden" name="latitude"><input type="hidden" name="longitude">
+            <input type="hidden" name="verification_method" value="manual">
             <button class="btn btn-accent btn-lg"><svg class="icon"><use href="#i-pin"/></svg>Presensi {{ sesi_aktif.get_nama_sesi_display }}</button>
+            {% if has_passkey %}
+              <button class="btn btn-primary" type="button" data-passkey-attendance>Gunakan biometrik perangkat</button>
+              <small id="passkeyStatus">Menyiapkan verifikasi biometrik...</small>
+            {% else %}
+              <small>Presensi biometrik opsional dapat diaktifkan dari <a href="{% url 'profil' %}">profil Anda</a>.</small>
+            {% endif %}
           </form>
           <small id="geoStatus">Aktifkan GPS dan pastikan Anda berada di area asrama.</small>
         {% endif %}

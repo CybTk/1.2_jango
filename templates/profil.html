@@ -22,5 +22,35 @@
       <button class="btn btn-primary">Simpan Perubahan</button></form></div>
   </section>
 </div>
+{% if user.role == 'penghuni' and not user.is_superuser %}
+<section class="card" style="margin-top:20px">
+  <div class="card-head"><h2>Biometrik Perangkat untuk Presensi</h2></div>
+  <div class="card-body">
+    <p>Gunakan passkey perangkat seperti Face ID atau Windows Hello saat presensi. Pemeriksaan dilakukan oleh perangkat Anda; aplikasi tidak menerima atau menyimpan foto maupun templat wajah. Perangkat mungkin meminta PIN sesuai pengaturannya.</p>
+    {% if passkeys %}
+      <div class="stack" style="margin:16px 0">
+        {% for passkey in passkeys %}
+        <div class="sesi">
+          <div><b>Passkey terdaftar</b><small>Disetujui {{ passkey.consented_at|date:"d M Y H:i" }}</small></div>
+          <form method="post" action="{% url 'passkey_delete' passkey.id %}">{% csrf_token %}
+            <button class="btn" type="submit">Hapus passkey</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p>Belum ada passkey terdaftar. Anda tetap dapat presensi menggunakan GPS tanpa biometrik.</p>
+    {% endif %}
+    <label style="display:flex;gap:8px;align-items:flex-start;margin:16px 0">
+      <input type="checkbox" data-passkey-consent>
+      <span>Saya setuju mendaftarkan passkey ini untuk verifikasi presensi. Saya memahami data biometrik tetap dikelola lokal oleh perangkat.</span>
+    </label>
+    <button class="btn btn-primary" type="button" data-passkey-register
+            data-options-url="{% url 'passkey_registration_options' %}"
+            data-verify-url="{% url 'passkey_register' %}" disabled>Daftarkan biometrik perangkat</button>
+    <p id="passkeyRegistrationStatus" role="status" aria-live="polite"></p>
+  </div>
+</section>
+{% endif %}
 <style>@media(max-width:1100px){.g-main[style]{grid-template-columns:1fr!important}}</style>
 {% endblock %}

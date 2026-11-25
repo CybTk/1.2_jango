@@ -20,6 +20,7 @@ from .forms import (PenghuniForm, GedungForm, KamarForm, SesiForm, SesiTambahFor
                     ProfilForm, StyledPasswordChangeForm)
 
 from .models import Presensi, SesiPresensi, PengajuanIzin, PenghuniKamar, User, Gedung, Kamar
+from .webauthn import consume_attendance_passkey
 
 
 # ---------------------------------------------------------------- helper
@@ -126,6 +127,7 @@ def home(request):
         'riwayat_terbaru': (Presensi.objects.filter(user=user).select_related('sesi')
                             .order_by('-tanggal', '-sesi__jam_mulai')[:5]),
         'izin_pending': PengajuanIzin.objects.filter(presensi__user=user, status_persetujuan='pending').count(),
+        'has_passkey': user.passkeys.exists(),
         'today': today,
     })
 
@@ -301,6 +303,10 @@ def do_presensi(request):
     if not is_penghuni(request.user):
         return _tolak_non_staf(request)
     user = request.user
+    verification_method = request.POST.get('verification_method', 'manual')
+    if verification_method not in ('manual', 'passkey'):
+        messages.error(request, "Metode verifikasi tidak valid.")
+        return redirect('home')
     try:
         lat = float(request.POST.get('latitude', ''))
         lng = float(request.POST.get('longitude', ''))
@@ -335,6 +341,11 @@ def do_presensi(request):
         messages.error(request, f"Kamu berada di luar radius asrama ({int(jarak)}m dari gedung).")
         return redirect('home')
 
+    passkey_verified = verification_method == 'passkey'
+    if passkey_verified and not consume_attendance_passkey(request):
+        messages.error(request, "Verifikasi biometrik tidak valid atau kedaluwarsa. Silakan ulangi.")
+        return redirect('home')
+
     _, created = Presensi.objects.get_or_create(
         user=user, sesi=sesi, tanggal=today,
         defaults={
@@ -342,7 +353,8 @@ def do_presensi(request):
             'status': 'hadir',
             'latitude': lat,
             'longitude': lng,
-            'is_in_radius': True
+            'is_in_radius': True,
+            'passkey_verified': passkey_verified,
         }
     )
 
@@ -605,7 +617,10 @@ def profil(request):
         messages.success(request, "Profil diperbarui.")
         return redirect('profil')
     kamar = PenghuniKamar.objects.filter(user=request.user, status='aktif').select_related('kamar__gedung').first()
-    return render(request, 'profil.html', {'form': form, 'penghuni_kamar': kamar})
+    passkeys = request.user.passkeys.order_by('-created_at') if is_penghuni(request.user) else []
+    return render(request, 'profil.html', {
+        'form': form, 'penghuni_kamar': kamar, 'passkeys': passkeys,
+    })
 
 
 class GantiPassword(SuccessMessageMixin, PasswordChangeView):

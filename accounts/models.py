@@ -83,6 +83,7 @@ class Presensi(models.Model):
     latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     is_in_radius = models.BooleanField(default=False)
+    passkey_verified = models.BooleanField(default=False)
 
     class Meta:
         unique_together = ('user', 'sesi', 'tanggal')
@@ -101,10 +102,23 @@ class PengajuanIzin(models.Model):
     presensi = models.OneToOneField(Presensi, on_delete=models.CASCADE, related_name='pengajuan_izin')
     fasil = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='izin_diproses')
     alasan = models.TextField()
-    file_bukti = models.FileField(upload_to='bukti_izin/')
+    file_bukti = models.FileField(upload_to='bukti_izin/', blank=True, null=True)
     status_persetujuan = models.CharField(max_length=20, choices=STATUS_PERSETUJUAN, default='pending')
     catatan_fasil = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"Izin {self.presensi.user.username} - {self.status_persetujuan}"
+
+
+class WebAuthnCredential(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='passkeys')
+    credential_id = models.CharField(max_length=1024, unique=True)
+    public_key = models.BinaryField()
+    sign_count = models.PositiveBigIntegerField(default=0)
+    transports = models.JSONField(default=list, blank=True)
+    consented_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Passkey {self.user.username}"

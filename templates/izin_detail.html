@@ -32,11 +32,17 @@
     </div>
   </section>
   <section class="card">
-    <div class="card-head"><h2>Bukti Pendukung</h2><a href="{{ izin.file_bukti.url }}" target="_blank" rel="noopener">Buka di tab baru</a></div>
+    <div class="card-head"><h2>Bukti Pendukung</h2>{% if izin.file_bukti %}<a href="{{ izin.file_bukti.url }}" target="_blank" rel="noopener">Buka di tab baru</a>{% endif %}</div>
     <div class="card-body">
-      {% if is_img %}<img class="preview" src="{{ izin.file_bukti.url }}" alt="Bukti izin">
-      {% elif is_pdf %}<iframe class="preview-pdf" src="{{ izin.file_bukti.url }}" title="Bukti izin (PDF)"></iframe>
-      {% else %}<div class="empty">Pratinjau tidak tersedia. <a href="{{ izin.file_bukti.url }}" target="_blank">Unduh berkas</a></div>{% endif %}
+      {% if not izin.file_bukti %}
+        <div class="empty">Tidak ada bukti pendukung yang dilampirkan.</div>
+      {% elif is_img %}
+        <img class="preview" src="{{ izin.file_bukti.url }}" alt="Bukti izin">
+      {% elif is_pdf %}
+        <iframe class="preview-pdf" src="{{ izin.file_bukti.url }}" title="Bukti izin (PDF)"></iframe>
+      {% else %}
+        <div class="empty">Pratinjau tidak tersedia. <a href="{{ izin.file_bukti.url }}" target="_blank">Unduh berkas</a></div>
+      {% endif %}
     </div>
   </section>
 </div>

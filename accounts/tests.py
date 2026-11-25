@@ -1,5 +1,6 @@
 from datetime import date, datetime, time
 import tempfile
+from types import SimpleNamespace
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
@@ -7,6 +8,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from webauthn.helpers import bytes_to_base64url
 from django.utils import timezone
 
 from .models import (
@@ -17,6 +19,7 @@ from .models import (
     Presensi,
     SesiPresensi,
     User,
+    WebAuthnCredential,
 )
 
 
@@ -128,6 +131,131 @@ class PresensiViewTests(TestCase):
         self.assertEqual(Presensi.objects.count(), 1)
         self.assertEqual(presensi.status, "hadir")
         self.assertTrue(presensi.is_in_radius)
+        self.assertFalse(presensi.passkey_verified)
+
+
+class PasskeyViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="penghuni", password="rahasia")
+        self.client.force_login(self.user)
+
+    def test_profile_explains_opt_in_and_displays_passkey_controls(self):
+        response = self.client.get(reverse("profil"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Face ID atau Windows Hello")
+        self.assertContains(response, "Saya setuju mendaftarkan passkey")
+        self.assertContains(response, "passkey/opsi-daftar/")
+
+    def test_registration_options_require_explicit_consent(self):
+        response = self.client.post(
+            reverse("passkey_registration_options"),
+            data='{"consent": false}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+        response = self.client.post(
+            reverse("passkey_registration_options"),
+            data='{"consent": true}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        options = response.json()
+        self.assertEqual(
+            options["authenticatorSelection"]["authenticatorAttachment"], "platform"
+        )
+        self.assertEqual(options["authenticatorSelection"]["userVerification"], "required")
+
+    def test_registration_stores_credential_only_after_verification(self):
+        self.client.post(
+            reverse("passkey_registration_options"),
+            data='{"consent": true}',
+            content_type="application/json",
+        )
+        verified = SimpleNamespace(
+            credential_id=b"credential-id",
+            credential_public_key=b"public-key",
+            sign_count=0,
+        )
+        with patch("accounts.webauthn.verify_registration_response", return_value=verified):
+            response = self.client.post(
+                reverse("passkey_register"),
+                data='{"response": {"transports": ["internal"]}}',
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        credential = self.user.passkeys.get()
+        self.assertEqual(credential.credential_id, bytes_to_base64url(b"credential-id"))
+        self.assertEqual(bytes(credential.public_key), b"public-key")
+        self.assertEqual(credential.transports, ["internal"])
+        self.assertIsNotNone(credential.consented_at)
+
+    def test_authenticated_passkey_proof_is_one_time_and_recorded_on_attendance(self):
+        gedung = Gedung.objects.create(
+            nama_gedung="Asrama",
+            latitude=-0.914,
+            longitude=100.459,
+            radius_meter=100,
+        )
+        kamar = Kamar.objects.create(gedung=gedung, nomor_kamar="1", kapasitas=2)
+        PenghuniKamar.objects.create(
+            user=self.user, kamar=kamar, tanggal_masuk=date(2026, 1, 1)
+        )
+        sesi = SesiPresensi.objects.create(
+            nama_sesi="malam",
+            jam_mulai=time(18, 0),
+            jam_selesai=time(20, 30),
+        )
+        credential = WebAuthnCredential.objects.create(
+            user=self.user,
+            credential_id=bytes_to_base64url(b"registered-credential"),
+            public_key=b"public-key",
+            sign_count=2,
+            consented_at=timezone.now(),
+        )
+        options_response = self.client.post(
+            reverse("passkey_authentication_options"),
+            data="{}",
+            content_type="application/json",
+        )
+        self.assertEqual(options_response.status_code, 200)
+        verified = SimpleNamespace(new_sign_count=3)
+        with patch("accounts.webauthn.verify_authentication_response", return_value=verified):
+            response = self.client.post(
+                reverse("passkey_authenticate"),
+                data='{"id": "%s"}' % credential.credential_id,
+                content_type="application/json",
+            )
+        self.assertEqual(response.status_code, 200)
+        credential.refresh_from_db()
+        self.assertEqual(credential.sign_count, 3)
+
+        now = datetime(2026, 1, 2, 19, 0, tzinfo=ZoneInfo("Asia/Jakarta"))
+        with patch("accounts.views.timezone.localtime", return_value=now):
+            response = self.client.post(
+                reverse("do_presensi"),
+                {
+                    "latitude": "-0.914",
+                    "longitude": "100.459",
+                    "verification_method": "passkey",
+                },
+            )
+            self.assertRedirects(response, reverse("home"))
+            presensi = Presensi.objects.get(user=self.user, sesi=sesi, tanggal=now.date())
+            self.assertTrue(presensi.passkey_verified)
+
+            response = self.client.post(
+                reverse("do_presensi"),
+                {
+                    "latitude": "-0.914",
+                    "longitude": "100.459",
+                    "verification_method": "passkey",
+                },
+            )
+            self.assertRedirects(response, reverse("home"))
+        self.assertEqual(Presensi.objects.count(), 1)
 
 
 class GenerateAlpaCommandTests(TestCase):
@@ -344,6 +472,16 @@ class IzinWorkflowTests(TestCase):
         self.assertFalse(PengajuanIzin.objects.filter(pk=own_izin.pk).exists())
         self.assertFalse(Presensi.objects.filter(pk=own_izin.presensi_id).exists())
         self.assertTrue(PengajuanIzin.objects.filter(pk=other_izin.pk).exists())
+
+    def test_detail_request_without_evidence_does_not_crash(self):
+        izin = self.create_pengajuan()
+        izin.file_bukti = None
+        izin.save(update_fields=["file_bukti"])
+
+        response = self.client.get(reverse("izin_detail", args=[izin.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Tidak ada bukti pendukung")
 
     def test_staff_cannot_submit_resident_requests_and_resident_cannot_approve(self):
         self.client.force_login(self.fasil)
