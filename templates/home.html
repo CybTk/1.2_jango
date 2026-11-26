@@ -25,7 +25,7 @@
                 data-passkey-verify="{% url 'passkey_authenticate' %}">{% csrf_token %}
             <input type="hidden" name="latitude"><input type="hidden" name="longitude">
             <input type="hidden" name="verification_method" value="manual">
-            <button class="btn btn-accent btn-lg"><svg class="icon"><use href="#i-pin"/></svg>Presensi {{ sesi_aktif.get_nama_sesi_display }}</button>
+            <button type="submit" class="btn btn-accent btn-lg"><svg class="icon"><use href="#i-pin"/></svg>Presensi {{ sesi_aktif.get_nama_sesi_display }}</button>
             {% if has_passkey %}
               <button class="btn btn-primary" type="button" data-passkey-attendance>Gunakan biometrik perangkat</button>
               <small id="passkeyStatus">Menyiapkan verifikasi biometrik...</small>
